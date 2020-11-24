@@ -9,6 +9,9 @@
 #include <signal.h>
 #include <pthread.h>
 
+#define CONTINUOUS -1
+#define ONCE 0
+
 const char* DELIMITER = "|";
 const char* DELIMITER_COLOR = "#666666";
 
@@ -249,7 +252,7 @@ void insert_block(enum BAR_AREA bar_area, char* block_comand, int delay){
     pthread_mutex_init(&block.lock, NULL);
 
     
-    if (delay >= 0){
+    if (delay > 0 || delay == ONCE){
         update_block(&block);
 
         signal(new_id, update_block_and_draw_bar);
@@ -266,7 +269,7 @@ void insert_block(enum BAR_AREA bar_area, char* block_comand, int delay){
        }
     }
 
-    if (delay < 0){
+    if (delay == CONTINUOUS){
         pthread_t thread;
         int rc = pthread_create(&thread, NULL, update_continuous_thread, (void *)new_id);
 
@@ -282,13 +285,13 @@ int main (int argc, char** argv) {
     BAR_STATE.right = make(5);
 
     insert_block(right, "scripts/wifi", 5);
-    insert_block(right, "blind --block", 0);
-    insert_block(right, "deaf --block", 0);
+    insert_block(right, "blind --block", ONCE);
+    insert_block(right, "deaf --block", ONCE);
     insert_block(right, "scripts/battery 1", 10);
     insert_block(right, "scripts/battery 0", 10);
     insert_block(right, "date '+\%d/%m  %H:%M   '", 1);
 
-    insert_block(left, "scripts/workspaces", -1);
+    insert_block(left, "scripts/workspaces", CONTINUOUS);
     insert_block(left, "uptime -p", 60);
 
     draw_bar();
