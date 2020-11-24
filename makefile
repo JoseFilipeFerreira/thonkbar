@@ -1,17 +1,15 @@
 CC= gcc
-CFLAGS= -lpthread
+CFLAGS= -lpthread -O2
 
 EXEC= thonkbar
 DAEMON = thonkbar_daemon
-
-SCRIPTS= scripts
-
 
 $(EXEC): thonkbar.c
 	$(CC) thonkbar.c -o $(EXEC) $(CFLAGS)
 
 debug: thonkbar.c
 	$(CC) -g thonkbar.c -o $(EXEC) $(CFLAGS)
+
 clean:
 	rm -f $(EXEC)
 
