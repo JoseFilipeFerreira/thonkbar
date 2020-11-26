@@ -8,9 +8,13 @@
 #include <string.h>
 #include <signal.h>
 #include <pthread.h>
+#include <sys/types.h>
+#include <pwd.h>
 
 #define CONTINUOUS -1
 #define ONCE 0
+
+#define BUFF_SIZE 1024
 
 const char* DELIMITER = "|";
 const char* DELIMITER_COLOR = "#666666";
@@ -71,6 +75,8 @@ struct Block_Array* get_block_array(enum BAR_AREA area){
             return &BAR_STATE.center;
         case right:
             return &BAR_STATE.right;
+        default:
+            return NULL;
     }
 }
 
@@ -123,7 +129,7 @@ void draw_bar() {
     if (BAR_STATE.left.n_blocks > 0)
         draw_side(BAR_STATE.left, "l");
 
-    printf("\n");
+    putchar('\n');
 
     fflush(stdout);
 }
@@ -136,7 +142,7 @@ void update_block(struct Block* block) {
         return;
     }
 
-    char line[1024];
+    char line[BUFF_SIZE];
 
     char* long_version = NULL;
     char* short_version = NULL;
@@ -216,7 +222,7 @@ void* update_continuous_thread(void* signalid){
         return NULL;
     }
 
-    char line[1024];
+    char line[BUFF_SIZE];
 
     while (fgets(line, sizeof(line), fp) != NULL) {
         pthread_mutex_lock(&block->lock);
@@ -233,9 +239,11 @@ void* update_continuous_thread(void* signalid){
     pthread_exit(NULL);
 }
 
-void insert_block(enum BAR_AREA bar_area, char* block_comand, int delay){
+void insert_block(enum BAR_AREA bar_area, char* comand, int delay){
     static size_t last_id_right = 34;
     static size_t last_id_other = 64;
+
+    char* block_comand = strdup(comand);
 
     size_t new_id = (bar_area == right)?last_id_right++:last_id_other--;
 
@@ -279,20 +287,80 @@ void insert_block(enum BAR_AREA bar_area, char* block_comand, int delay){
     }
 }
 
-int main (int argc, char** argv) {
+int main (void) {
     BAR_STATE.left = make(5);
     BAR_STATE.center = make(5);
     BAR_STATE.right = make(5);
 
-    insert_block(right, "scripts/wifi", 5);
-    insert_block(right, "blind --block", ONCE);
-    insert_block(right, "deaf --block", ONCE);
-    insert_block(right, "scripts/battery 1", 10);
-    insert_block(right, "scripts/battery 0", 10);
-    insert_block(right, "date '+\%d/%m  %H:%M   '", 1);
+    const char *HOME;
+    if ((HOME = getenv("HOME")) == NULL) {
+        HOME = getpwuid(getuid())->pw_dir;
+    }
 
-    insert_block(left, "scripts/workspaces", CONTINUOUS);
-    insert_block(left, "uptime -p", 60);
+    char* CONFIG_DIR;
+    asprintf(&CONFIG_DIR, "%s/.config/thonkbar/config", HOME);
+
+    FILE* f = fopen(CONFIG_DIR, "r");
+
+    if (!f){
+        fprintf(stderr, "Couldn't open file: %s\n", CONFIG_DIR);
+        return 1;
+    }
+
+    char line[BUFF_SIZE];
+    int n_lines = 0;
+
+    enum BAR_AREA bar_area = -1;
+    while(fgets(line, BUFF_SIZE, f)){
+        n_lines++;
+
+        line[strlen(line) - 1] = '\0';
+
+        if (line[0] == '[' && line[strlen(line) - 1] == ']'){
+            if (strcmp("[left]", line) == 0){
+                bar_area = left;
+            } else if (strcmp("[right]", line) == 0){
+                bar_area = right;
+            } else if (strcmp("[center]", line) == 0){
+                bar_area = center;
+            } else {
+                fprintf(
+                    stderr,
+                    "config:%d: \033[31merror:\033[0m invalid block location\nCan only be left, right or center\n",
+                    n_lines);
+                return 1;
+            }
+        } else {
+            char* comand = strtok(line, ",");
+
+            char* update = strtok(NULL, ",");
+            int update_time;
+            if (strstr(update, "ONCE") != NULL){
+                update_time = ONCE;
+            } else if (strstr(update, "CONTINUOUS") != NULL){
+                update_time = CONTINUOUS;
+            } else if ((update_time = atoi(update)) <= 0) {
+                fprintf(
+                    stderr,
+                    "config:%d: \033[31merror:\033[0m invalid block update time\nCan only be ONCE, CONTINUOUS or an int greater than 0\n",
+                    n_lines);
+                return 1;
+            }
+
+            if(bar_area == (enum BAR_AREA)-1){
+                fprintf(
+                    stderr,
+                    "config:%d: \033[31merror:\033[0m no block location defined\n",
+                    n_lines);
+                return 1;
+            }
+
+            insert_block(bar_area, comand, update_time);
+        }
+
+    }
+
+    fclose(f);
 
     draw_bar();
 
