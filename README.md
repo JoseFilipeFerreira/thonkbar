@@ -10,9 +10,10 @@ make install
 
 ## ⚙️ Configure
 The program reads a config file located at `~/.config/thonkbar/config`.
+
 An example of this file can be found [here](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/config).
 
-### bar area
+### bar side
 Write one line with one of the following to define on wich side of the bar the
 following blocks will be added
 
@@ -42,16 +43,16 @@ The delay can be any of the following
 
 
 ### examples
-* Insert a block on the right side that displays the time/date and runs every second
-* Insert a block on the left side that listens continuously to a script located at `~/.config/thonkbar/scripts/workspaces`
-```
+* Config file that inserts a block on the right side that displays the time/date and runs every second and inserts a block on the left side that listens continuously to a script located at `~/.config/thonkbar/scripts/workspaces`
+```ini
 [right]
-date '+%d/%m  %H:%M'", 1
+date '+%d/%m  %H:%M', 1
 [left]
-scripts/workspaces, CONTINUOUS);
+scripts/workspaces, CONTINUOUS
  ```
-Example scripts for [battery](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/battery), [wifi](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/wifi) and
- [workspaces for i3](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/workspaces).
+* Script for [battery](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/battery)
+* Script for [wifi](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/wifi)
+* Script for [workspaces on i3](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/workspaces).
 
 ## 📡 Update block
 You can also update a block remotely with signals.
