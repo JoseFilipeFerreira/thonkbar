@@ -8,13 +8,13 @@ $(EXEC): thonkbar.c
 	$(CC) thonkbar.c -O2 -o $(EXEC) $(CFLAGS)
 
 debug: thonkbar.c
-	$(CC) -g thonkbar.c -o $(EXEC) $(CFLAGS)
+	$(CC) -g -DNDEBUG thonkbar.c -o $(EXEC) $(CFLAGS)
 
 clean:
 	rm -f $(EXEC)
 
 install: $(EXEC) $(DAEMON)
-	cp $(EXEC) $(DAEMON) /usr/local/bin
+	cp -f $(EXEC) $(DAEMON) /usr/local/bin
 
 uninstall:
 	rm /usr/local/bin/{$(EXEC),$(DAEMON)}
