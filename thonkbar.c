@@ -1,28 +1,38 @@
 #ifndef _GNU_SOURCE
-#define _GNU_SOURCE 1
+#    define _GNU_SOURCE 1
 #endif
 
+#include <ctype.h>
+#include <pthread.h>
+#include <pwd.h>
+#include <signal.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h>
-#include <pthread.h>
 #include <sys/types.h>
-#include <pwd.h>
+#include <unistd.h>
 
+#define CONFIG -2
 #define CONTINUOUS -1
 #define ONCE 0
 
 #define BUFF_SIZE 1024
 
-const char* DELIMITER = "|";
-const char* DELIMITER_COLOR = "#666666";
+char* DELIMITER = NULL;
+char* DELIMITER_COLOR = NULL;
+
+char* triml(char* str) {
+    while (isspace(*++str))
+        ;
+    return str;
+}
 
 struct Block {
     pthread_mutex_t lock;
     char* command;
-    char* result;
+    char* text;
+    char* text_color;
+    char* underline_color;
     size_t delay;
     size_t id;
 };
@@ -33,8 +43,8 @@ struct Block_Array {
     size_t max_blocks;
 };
 
-struct Block_Array make(size_t max){
-    struct Block_Array block_arr =  {
+struct Block_Array make(size_t max) {
+    struct Block_Array block_arr = {
         .array = malloc(sizeof(struct Block) * max),
         .n_blocks = 0,
         .max_blocks = max,
@@ -43,14 +53,15 @@ struct Block_Array make(size_t max){
     return block_arr;
 }
 
-void insert(struct Block_Array* block_arr, struct Block* block){
-    if(block_arr->n_blocks >= block_arr->max_blocks){
-        block_arr->array = realloc(block_arr->array, sizeof(struct Block) * block_arr->max_blocks * 2);
+void insert(struct Block_Array* block_arr, struct Block* block) {
+    if (block_arr->n_blocks >= block_arr->max_blocks) {
+        block_arr->array = realloc(
+            block_arr->array, sizeof(struct Block) * block_arr->max_blocks * 2);
         block_arr->max_blocks *= 2;
-     }
-     
-     block_arr->array[block_arr->n_blocks] = *block;
-     block_arr->n_blocks++;
+    }
+
+    block_arr->array[block_arr->n_blocks] = *block;
+    block_arr->n_blocks++;
 }
 
 struct Bar {
@@ -61,13 +72,9 @@ struct Bar {
 
 struct Bar BAR_STATE;
 
-enum BAR_AREA {
-    left,
-    right,
-    center
-};
+enum BAR_MODE { left, right, center, config };
 
-struct Block_Array* get_block_array(enum BAR_AREA area){
+struct Block_Array* get_block_array(enum BAR_MODE area) {
     switch (area) {
         case left:
             return &BAR_STATE.left;
@@ -80,7 +87,7 @@ struct Block_Array* get_block_array(enum BAR_AREA area){
     }
 }
 
-struct Block* get_block(size_t signal_id){
+struct Block* get_block(size_t signal_id) {
     for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++)
         if (BAR_STATE.right.array[i].id == signal_id)
             return &BAR_STATE.right.array[i];
@@ -96,22 +103,38 @@ struct Block* get_block(size_t signal_id){
     return NULL;
 }
 
-void draw_side(struct Block_Array block_arr, char* marker){
+void draw_side(struct Block_Array block_arr, char* marker) {
     printf("%%{%s}", marker);
 
     int print_delimiter = 1;
-    for(size_t i = 0; i < block_arr.n_blocks; i++){
+    for (size_t i = 0; i < block_arr.n_blocks; i++) {
 
-        pthread_mutex_lock(&block_arr.array[i].lock);
+        struct Block block = block_arr.array[i];
 
-        if (block_arr.array[i].result)
-            printf("%s", block_arr.array[i].result);
-        else
+        pthread_mutex_lock(&block.lock);
+
+        if (block.text) {
+            if (block.underline_color) {
+                printf(
+                    "%%{+u}%%{F%s}%%{U%s}%s%%{U-}%%{-u}",
+                    block.text_color ? block.text_color : "-",
+                    block.underline_color ? block.underline_color : "-",
+                    block.text);
+
+            } else {
+                printf(
+                    "%%{F%s}%%{U%s}%s",
+                    block.text_color ? block.text_color : "-",
+                    block.underline_color ? block.underline_color : "-",
+                    block.text);
+            }
+        } else {
             print_delimiter = 0;
+        }
 
         pthread_mutex_unlock(&block_arr.array[i].lock);
 
-        if (i < block_arr.n_blocks - 1 && print_delimiter){
+        if (i < block_arr.n_blocks - 1 && print_delimiter) {
             printf("  %%{F%s}%s  ", DELIMITER_COLOR, DELIMITER);
         }
 
@@ -122,12 +145,9 @@ void draw_side(struct Block_Array block_arr, char* marker){
 }
 
 void draw_bar() {
-    if (BAR_STATE.right.n_blocks > 0)
-        draw_side(BAR_STATE.right, "r");
-    if (BAR_STATE.center.n_blocks > 0)
-        draw_side(BAR_STATE.center, "c");
-    if (BAR_STATE.left.n_blocks > 0)
-        draw_side(BAR_STATE.left, "l");
+    if (BAR_STATE.right.n_blocks > 0) draw_side(BAR_STATE.right, "r");
+    if (BAR_STATE.center.n_blocks > 0) draw_side(BAR_STATE.center, "c");
+    if (BAR_STATE.left.n_blocks > 0) draw_side(BAR_STATE.left, "l");
 
     putchar('\n');
 
@@ -135,7 +155,7 @@ void draw_bar() {
 }
 
 void update_block(struct Block* block) {
-    FILE *fp = popen(block->command ,"r");
+    FILE* fp = popen(block->command, "r");
 
     if (fp == NULL) {
         fprintf(stderr, "Failed to run command: %s\n", block->command);
@@ -144,66 +164,58 @@ void update_block(struct Block* block) {
 
     char line[BUFF_SIZE];
 
-    char* long_version = NULL;
-    char* short_version = NULL;
-    char* color = NULL;
+    char* text = NULL;
+    char* text_color = NULL;
+    char* text_underline = NULL;
 
     size_t n_lines_read = 0;
     while (fgets(line, sizeof(line), fp) != NULL) {
         n_lines_read++;
-        switch (n_lines_read){
+        switch (n_lines_read) {
             case 1:
-                long_version = strdup(line);
-                strtok(long_version, "\n");
+                text = strdup(line);
+                strtok(text, "\n");
                 break;
             case 2:
-                short_version = strdup(line);
-                strtok(short_version, "\n");
+                text_color = strdup(line);
+                strtok(text_color, "\n");
                 break;
             case 3:
-                color = strdup(line);
-                strtok(color, "\n");
+                text_underline = strdup(line);
+                strtok(text_underline, "\n");
                 break;
         }
     }
 
-    char* new_result;
-
-    if (n_lines_read == 0 || long_version[0] == '\n') {
-        new_result = NULL;
-    }
-    else {
-        asprintf(&new_result, "%%{F%s}%s", color?color:"-", long_version);
-    }
-
     pthread_mutex_lock(&block->lock);
 
-    free(block->result);
-    block->result = new_result;
+    free(block->text);
+    block->text = text;
+    free(block->text_color);
+    block->text_color = text_color;
+    free(block->underline_color);
+    block->underline_color = text_underline;
 
     pthread_mutex_unlock(&block->lock);
 
-    free(long_version);
-    free(short_version);
-    free(color);
     pclose(fp);
 }
 
-void update_block_and_draw_bar(int signal_id){
+void update_block_and_draw_bar(int signal_id) {
     struct Block* block = get_block(signal_id);
 
-    if (! block) return;
+    if (!block) return;
 
     update_block(block);
     draw_bar();
 }
 
-void* update_thread(void* signalid){
+void* update_thread(void* signalid) {
     size_t id = (size_t) signalid;
     struct Block* block = get_block(id);
     size_t delay = block->delay;
 
-    while(1){
+    while (1) {
         sleep(delay);
         update_block_and_draw_bar(id);
     }
@@ -211,11 +223,11 @@ void* update_thread(void* signalid){
     pthread_exit(NULL);
 }
 
-void* update_continuous_thread(void* signalid){
+void* update_continuous_thread(void* signalid) {
     size_t id = (size_t) signalid;
     struct Block* block = get_block(id);
 
-    FILE *fp = popen(block->command ,"r");
+    FILE* fp = popen(block->command, "r");
 
     if (fp == NULL) {
         fprintf(stderr, "Failed to run command: %s\n", block->command);
@@ -227,9 +239,9 @@ void* update_continuous_thread(void* signalid){
     while (fgets(line, sizeof(line), fp) != NULL) {
         pthread_mutex_lock(&block->lock);
 
-        free(block->result);
-        block->result = strdup(line);
-        strtok(block->result, "\n");
+        free(block->text);
+        block->text = strdup(line);
+        strtok(block->text, "\n");
 
         pthread_mutex_unlock(&block->lock);
 
@@ -239,128 +251,198 @@ void* update_continuous_thread(void* signalid){
     pthread_exit(NULL);
 }
 
-void insert_block(enum BAR_AREA bar_area, char* comand, int delay){
+void insert_block(enum BAR_MODE bar_mode, char* comand, int delay) {
     static size_t last_id_right = 34;
     static size_t last_id_other = 64;
 
     char* block_comand = strdup(comand);
 
-    size_t new_id = (bar_area == right)?last_id_right++:last_id_other--;
+    size_t new_id = (bar_mode == right) ? last_id_right++ : last_id_other--;
 
-    if (strstr(block_comand, "scripts/") == block_comand){
+    if (strstr(block_comand, "scripts/") == block_comand) {
         asprintf(&block_comand, "~/.config/thonkbar/%s", block_comand);
     }
 
     struct Block block = {
-        .command = block_comand,
-        .delay = delay,
-        .id = new_id
-    };
+        .command = block_comand, .delay = delay, .id = new_id};
 
     pthread_mutex_init(&block.lock, NULL);
 
-    
-    if (delay > 0 || delay == ONCE){
+#ifdef NDEBUG
+    printf("BLOCK: %s\n", comand);
+#endif
+
+    if (delay > 0 || delay == ONCE) {
         update_block(&block);
 
         signal(new_id, update_block_and_draw_bar);
+
+#ifdef NDEBUG
+        printf("DELAY: %d\nSIGNAL: %zu\n", delay, new_id);
+#endif
     }
 
-    insert(get_block_array(bar_area), &block);
+#ifdef NDEBUG
+    putchar('\n');
+#endif
+
+    insert(get_block_array(bar_mode), &block);
 
     if (delay > 0) {
         pthread_t thread;
-        int rc = pthread_create(&thread, NULL, update_thread, (void *)new_id);
+        int rc = pthread_create(&thread, NULL, update_thread, (void*) new_id);
 
-        if (rc){
-          printf("ERROR; return code from pthread_create() is %d\n", rc);
-       }
+        if (rc) {
+            printf("ERROR; return code from pthread_create() is %d\n", rc);
+        }
     }
 
-    if (delay == CONTINUOUS){
+    if (delay == CONTINUOUS) {
         pthread_t thread;
-        int rc = pthread_create(&thread, NULL, update_continuous_thread, (void *)new_id);
+        int rc = pthread_create(
+            &thread, NULL, update_continuous_thread, (void*) new_id);
 
-        if (rc){
-          printf("ERROR; return code from pthread_create() is %d\n", rc);
-       }
+        if (rc) {
+            printf("ERROR; return code from pthread_create() is %d\n", rc);
+        }
     }
 }
 
-int main (void) {
-    BAR_STATE.left = make(5);
-    BAR_STATE.center = make(5);
-    BAR_STATE.right = make(5);
+int parse_config(char* config_file) {
+    FILE* f = fopen(config_file, "r");
 
-    const char *HOME;
+    if (!f) {
+        fprintf(
+            stderr,
+            "%s: \033[31merror:\033[0m Could not open config file",
+            config_file);
+        return 0;
+    }
+
+    char line[BUFF_SIZE];
+
+    enum BAR_MODE bar_mode = -1;
+
+    for (size_t n_lines = 0; fgets(line, BUFF_SIZE, f); n_lines++) {
+
+        line[strlen(line) - 1] = '\0';
+
+        if (line[0] == '#' || line[0] == '\0') {
+            continue;
+        }
+
+        if (line[0] == '[' && line[strlen(line) - 1] == ']') {
+            if (strcmp("[config]", line) == 0) {
+                bar_mode = config;
+            } else if (strcmp("[left]", line) == 0) {
+                bar_mode = left;
+            } else if (strcmp("[right]", line) == 0) {
+                bar_mode = right;
+            } else if (strcmp("[center]", line) == 0) {
+                bar_mode = center;
+            } else {
+                fprintf(
+                    stderr,
+                    "config:%zu: \033[31merror:\033[0m invalid block mode\n"
+                    "Can only be left, right, center or config\n",
+                    n_lines);
+                return 0;
+            }
+
+        } else if (strchr(line, ',') == NULL) {
+            fprintf(
+                stderr,
+                "config:%zu: \033[31merror:\033[0m invalid line format\n",
+                n_lines);
+            return 0;
+
+        } else {
+            char* key = strtok(line, ",");
+            char* value = strtok(NULL, ",");
+            int update_time;
+
+            if (!(key && value)) {
+                fprintf(
+                    stderr,
+                    "config:%zu: \033[31merror:\033[0m invalid line format\n",
+                    n_lines);
+                return 0;
+            }
+
+            if (bar_mode == config) {
+                if (strstr(key, "delimiter_color") != NULL) {
+                    DELIMITER_COLOR = strdup(triml(value));
+                } else if (strstr(key, "delimiter") != NULL) {
+                    DELIMITER = strdup(triml(value));
+                } else {
+                    fprintf(
+                        stderr,
+                        "config:%zu: \033[31merror:\033[0m invalid bar config\n"
+                        "Can only be delimiter or delimiter_color\n",
+                        n_lines);
+                    return 0;
+                }
+            } else {
+
+                if (strstr(value, "ONCE") != NULL) {
+                    update_time = ONCE;
+                } else if (strstr(value, "CONTINUOUS") != NULL) {
+                    update_time = CONTINUOUS;
+                } else if ((update_time = atoi(value)) <= 0) {
+                    fprintf(
+                        stderr,
+                        "config:%zu: \033[31merror:\033[0m invalid block "
+                        "update "
+                        "time\nCan only be ONCE, CONTINUOUS or an int greater "
+                        "than "
+                        "0\n",
+                        n_lines);
+                    return 0;
+                }
+
+                if (bar_mode == (enum BAR_MODE) - 1) {
+                    fprintf(
+                        stderr,
+                        "config:%zu: \033[31merror:\033[0m no block location "
+                        "defined\n",
+                        n_lines);
+                    return 0;
+                }
+
+                insert_block(bar_mode, key, update_time);
+            }
+        }
+    }
+
+    if (!(DELIMITER && DELIMITER_COLOR)) {
+        fprintf(
+            stderr,
+            "config: \033[31merror:\033[0m delimiter and delimiter_color are "
+            "not defined\n");
+        return 0;
+    }
+
+    fclose(f);
+
+    return 1;
+}
+
+int main(void) {
+    BAR_STATE.left = make(10);
+    BAR_STATE.center = make(10);
+    BAR_STATE.right = make(10);
+
+    const char* HOME;
     if ((HOME = getenv("HOME")) == NULL) {
         HOME = getpwuid(getuid())->pw_dir;
     }
 
-    char* CONFIG_DIR;
-    asprintf(&CONFIG_DIR, "%s/.config/thonkbar/config", HOME);
+    char* config_file;
+    asprintf(&config_file, "%s/.config/thonkbar/config", HOME);
 
-    FILE* f = fopen(CONFIG_DIR, "r");
+    if (!parse_config(config_file)) return 1;
 
-    if (!f){
-        fprintf(stderr, "Couldn't open file: %s\n", CONFIG_DIR);
-        return 1;
-    }
-
-    char line[BUFF_SIZE];
-    int n_lines = 0;
-
-    enum BAR_AREA bar_area = -1;
-    while(fgets(line, BUFF_SIZE, f)){
-        n_lines++;
-
-        line[strlen(line) - 1] = '\0';
-
-        if (line[0] == '[' && line[strlen(line) - 1] == ']'){
-            if (strcmp("[left]", line) == 0){
-                bar_area = left;
-            } else if (strcmp("[right]", line) == 0){
-                bar_area = right;
-            } else if (strcmp("[center]", line) == 0){
-                bar_area = center;
-            } else {
-                fprintf(
-                    stderr,
-                    "config:%d: \033[31merror:\033[0m invalid block location\nCan only be left, right or center\n",
-                    n_lines);
-                return 1;
-            }
-        } else {
-            char* comand = strtok(line, ",");
-
-            char* update = strtok(NULL, ",");
-            int update_time;
-            if (strstr(update, "ONCE") != NULL){
-                update_time = ONCE;
-            } else if (strstr(update, "CONTINUOUS") != NULL){
-                update_time = CONTINUOUS;
-            } else if ((update_time = atoi(update)) <= 0) {
-                fprintf(
-                    stderr,
-                    "config:%d: \033[31merror:\033[0m invalid block update time\nCan only be ONCE, CONTINUOUS or an int greater than 0\n",
-                    n_lines);
-                return 1;
-            }
-
-            if(bar_area == (enum BAR_AREA)-1){
-                fprintf(
-                    stderr,
-                    "config:%d: \033[31merror:\033[0m no block location defined\n",
-                    n_lines);
-                return 1;
-            }
-
-            insert_block(bar_area, comand, update_time);
-        }
-
-    }
-
-    fclose(f);
+    free(config_file);
 
     draw_bar();
 
