@@ -21,6 +21,7 @@ clean:
 	rm $(EXEC)
 
 install:
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp -f $(EXEC) $(DESTDIR)$(PREFIX)/bin/
 	cp -f $(DAEMON) $(DESTDIR)$(PREFIX)/bin/
 
