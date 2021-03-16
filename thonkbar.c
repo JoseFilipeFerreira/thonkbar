@@ -97,6 +97,7 @@ struct Block_Array* get_block_array(enum BAR_MODE area) {
 }
 
 enum BAR_POSITON { top, bottom };
+enum DOCKING_MODE { normal, force };
 
 struct Config {
     char* delimiter;
@@ -105,7 +106,9 @@ struct Config {
     char* underline_width;
     char* background_color;
     char* foreground_color;
+    char* text_offset;
     enum BAR_POSITON bar_position;
+    enum DOCKING_MODE docking_mode;
 };
 
 struct Config BAR_CONFIG = {
@@ -115,14 +118,10 @@ struct Config BAR_CONFIG = {
     .underline_width = "2",
     .background_color = NULL,
     .foreground_color = NULL,
-    .bar_position = top};
+    .text_offset = NULL,
+    .bar_position = top,
+    .docking_mode = normal};
 
-void free_block(struct Block block) {
-    free(block.command);
-    free(block.text);
-    free(block.text_color);
-    free(block.underline_color);
-}
 struct Block* get_block(size_t signal_id) {
     for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++)
         if (BAR_STATE.right.array[i].id == signal_id) return &BAR_STATE.right.array[i];
@@ -423,6 +422,31 @@ int parse_config(char* config_file) {
                         n_lines);
                     return 0;
                 }
+            } else if (strstr(key, "docking_mode") != NULL) {
+                if (strstr(value, "normal") != NULL) {
+                    BAR_CONFIG.docking_mode = normal;
+                } else if (strstr(value, "force") != NULL) {
+                    BAR_CONFIG.docking_mode = force;
+                } else {
+                    fprintf(
+                        stderr,
+                        "config:%zu: \033[31merror:\033[0m invalid docking mode\n"
+                        "Can only be normal or force\n",
+                        n_lines);
+                    return 0;
+                }
+            } else if (strstr(key, "text_offset") != NULL) {
+                strtol(value, NULL, 10);
+                if (errno == EINVAL) {
+                    fprintf(
+                        stderr,
+                        "config:%zu: \033[31merror:\033[0m invalid text offset\n"
+                        "Can only be an integer\n",
+                        n_lines);
+                    return 0;
+                }
+                BAR_CONFIG.underline_width = strdup(value);
+
             } else if (strstr(key, "underline_width") != NULL) {
                 long lvalue = strtol(value, NULL, 10);
                 if (errno == EINVAL || lvalue < 0) {
@@ -462,13 +486,16 @@ int parse_config(char* config_file) {
                 update_time = ONCE;
             } else if (strstr(value, "CONTINUOUS") != NULL) {
                 update_time = CONTINUOUS;
-            } else if ((update_time = atoi(value)) <= 0) {
+            } else {
+                update_time = strtol(value, NULL, 10);
+                if (errno == EINVAL || update_time < 0) {
                 fprintf(
                     stderr,
                     "config:%zu: \033[31merror:\033[0m invalid block update time\n"
                     "Can only be ONCE, CONTINUOUS or an int greater than 0\n",
                     n_lines);
                 return 0;
+                }
             }
             insert_block(bar_mode, key, update_time);
         }
@@ -500,13 +527,14 @@ int fork_lemonbar() {
         *iter++ = "-F";
         *iter++ = BAR_CONFIG.foreground_color;
     }
+    if (BAR_CONFIG.text_offset){
+        *iter++ = "-o";
+        *iter++ = BAR_CONFIG.text_offset;
+    }
     if (BAR_CONFIG.bar_position == bottom) *iter++ = "-b";
+    if (BAR_CONFIG.docking_mode == force) *iter++ = "-d";
 
     if (pipe(LEMONBAR_PIPE) < 0) exit(1);
-
-    int i = 0;
-    while (argv[i]) printf("%s ", argv[i++]);
-    printf("\n");
 
     switch (fork()) {
         case 0:
