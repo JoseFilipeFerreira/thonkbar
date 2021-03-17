@@ -4,6 +4,9 @@ yet another block based lemonbar wrapper
 
 ## :link: Instalation
 
+From the [AUR](https://aur.archlinux.org/packages/thonkbar-git/) or manualy
+with:
+
 ```bash
 make install
 ```

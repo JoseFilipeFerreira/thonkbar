@@ -1,5 +1,5 @@
 ifndef PREFIX
-	PREFIX = /usr
+	PREFIX = /usr/local
 endif
 ifndef MANPREFIX
 	MANPREFIX = $(PREFIX)/share/man
@@ -21,7 +21,7 @@ clean:
 
 install: $(EXEC)
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	cp -f $(EXEC) $(DESTDIR)$(PREFIX)/bin/
+	cp -f $(EXEC) $(DESTDIR)$(PREFIX)/bin
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(EXEC)

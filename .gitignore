@@ -52,3 +52,5 @@ Mkfile.old
 dkms.conf
 
 thonkbar
+thonkbar-git-*
+pkg
