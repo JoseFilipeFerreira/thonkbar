@@ -1,5 +1,5 @@
 ifndef PREFIX
-	PREFIX = /usr/local
+	PREFIX = /usr
 endif
 ifndef MANPREFIX
 	MANPREFIX = $(PREFIX)/share/man
@@ -10,7 +10,7 @@ CFLAGS= -lpthread -std=c2x -Wall -Wextra -Wdouble-promotion -Werror=pedantic -We
 
 EXEC= thonkbar
 
-build: thonkbar.c
+$(EXEC): thonkbar.c
 	$(CC) thonkbar.c -O2 -o $(EXEC) $(CFLAGS)
 
 debug: thonkbar.c
@@ -19,7 +19,7 @@ debug: thonkbar.c
 clean:
 	rm $(EXEC)
 
-install:
+install: $(EXEC)
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp -f $(EXEC) $(DESTDIR)$(PREFIX)/bin/
 
