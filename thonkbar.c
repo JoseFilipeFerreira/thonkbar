@@ -170,7 +170,7 @@ int draw_side(char* buffer, struct Block_Array block_arr, char marker) {
 
         if (i < block_arr.n_blocks - 1 && print_delimiter) {
             size += sprintf(
-                buffer + size, "%%{F%s}%s", BAR_CONFIG.delimiter_color, BAR_CONFIG.delimiter);
+                buffer + size, " %%{F%s}%s", BAR_CONFIG.delimiter_color, BAR_CONFIG.delimiter);
         }
 
         print_delimiter = 1;
