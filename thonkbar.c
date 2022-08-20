@@ -288,29 +288,42 @@ void* update_continuous_thread(void* signalid) {
     pthread_exit(NULL);
 }
 
-void run_block(struct Block block) {
+void run_block(struct Block block, const pthread_attr_t* attr) {
     int rc = 0;
-    if (block.delay == ONCE) {
-        update_block(&block);
-        signal(block.id, update_block_and_draw_bar);
-    } else if (block.delay > 0) {
-        pthread_t thread;
-        rc = pthread_create(&thread, NULL, update_thread, (void*) block.id);
-        signal(block.id, update_block_and_draw_bar);
-    } else if (block.delay == CONTINUOUS) {
-        pthread_t thread;
-        rc = pthread_create(&thread, NULL, update_continuous_thread, (void*) block.id);
+    pthread_t thread;
+    switch (block.delay) {
+        case ONCE:
+            update_block(&block);
+            signal(block.id, update_block_and_draw_bar);
+            break;
+        case CONTINUOUS:
+            rc = pthread_create(&thread, attr, update_continuous_thread, (void*) block.id);
+            break;
+        default:
+            rc = pthread_create(&thread, attr, update_thread, (void*) block.id);
+            signal(block.id, update_block_and_draw_bar);
+            break;
     }
 
     if (rc) {
-        printf("ERROR; return code from pthread_create() is %d\n", rc);
+        fprintf(
+            stderr,
+            "\033[31merror:\033[0m Could not create pthread\n"
+            "return code from pthread_create(): %d\n",
+            rc);
     }
 }
 
 void run_blocks() {
-    for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++) run_block(BAR_STATE.right.array[i]);
-    for (size_t i = 0; i < BAR_STATE.center.n_blocks; i++) run_block(BAR_STATE.center.array[i]);
-    for (size_t i = 0; i < BAR_STATE.left.n_blocks; i++) run_block(BAR_STATE.left.array[i]);
+    pthread_attr_t at;
+    pthread_attr_init(&at);
+    pthread_attr_setstacksize(&at, 128);
+
+    for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++) run_block(BAR_STATE.right.array[i], &at);
+    for (size_t i = 0; i < BAR_STATE.center.n_blocks; i++) run_block(BAR_STATE.center.array[i], &at);
+    for (size_t i = 0; i < BAR_STATE.left.n_blocks; i++) run_block(BAR_STATE.left.array[i], &at);
+
+    pthread_attr_destroy(&at);
 }
 
 void insert_block(enum BAR_MODE bar_mode, char* comand, int delay) {
@@ -489,12 +502,12 @@ int parse_config(char* config_file) {
             } else {
                 update_time = strtol(value, NULL, 10);
                 if (errno == EINVAL || update_time < 0) {
-                fprintf(
-                    stderr,
-                    "config:%zu: \033[31merror:\033[0m invalid block update time\n"
-                    "Can only be ONCE, CONTINUOUS or an int greater than 0\n",
-                    n_lines);
-                return 0;
+                    fprintf(
+                        stderr,
+                        "config:%zu: \033[31merror:\033[0m invalid block update time\n"
+                        "Can only be ONCE, CONTINUOUS or an int greater than 0\n",
+                        n_lines);
+                    return 0;
                 }
             }
             insert_block(bar_mode, key, update_time);
@@ -527,7 +540,7 @@ int fork_lemonbar() {
         *iter++ = "-F";
         *iter++ = BAR_CONFIG.foreground_color;
     }
-    if (BAR_CONFIG.text_offset){
+    if (BAR_CONFIG.text_offset) {
         *iter++ = "-o";
         *iter++ = BAR_CONFIG.text_offset;
     }
@@ -537,14 +550,14 @@ int fork_lemonbar() {
     if (pipe(LEMONBAR_PIPE) < 0) exit(1);
 
     switch (fork()) {
+        case -1:
+            exit(1);
+            break;
         case 0:
             dup2(LEMONBAR_PIPE[0], STDIN_FILENO);
             close(LEMONBAR_PIPE[0]);
             close(LEMONBAR_PIPE[1]);
             execvp("lemonbar", argv);
-            break;
-        case -1:
-            exit(1);
             break;
         default:
             close(LEMONBAR_PIPE[0]);
@@ -565,10 +578,12 @@ int main(void) {
         HOME = getpwuid(getuid())->pw_dir;
     }
 
-    char config_file[BUFF_SIZE];
-    snprintf(config_file, BUFF_SIZE, "%s/.config/thonkbar/config", HOME);
+    char* config_file;
+    asprintf(&config_file, "%s/.config/thonkbar/config", HOME);
 
     if (!parse_config(config_file)) return 1;
+
+    free(config_file);
 
     fork_lemonbar();
 
