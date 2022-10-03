@@ -288,20 +288,20 @@ void* update_continuous_thread(void* signalid) {
     pthread_exit(NULL);
 }
 
-void run_block(struct Block block, const pthread_attr_t* attr) {
+void run_block(struct Block* block, const pthread_attr_t* attr) {
     int rc = 0;
     pthread_t thread;
-    switch (block.delay) {
+    switch (block->delay) {
         case ONCE:
-            update_block(&block);
-            signal(block.id, update_block_and_draw_bar);
+            update_block(block);
+            signal(block->id, update_block_and_draw_bar);
             break;
         case CONTINUOUS:
-            rc = pthread_create(&thread, attr, update_continuous_thread, (void*) block.id);
+            rc = pthread_create(&thread, attr, update_continuous_thread, (void*) block->id);
             break;
         default:
-            rc = pthread_create(&thread, attr, update_thread, (void*) block.id);
-            signal(block.id, update_block_and_draw_bar);
+            rc = pthread_create(&thread, attr, update_thread, (void*) block->id);
+            signal(block->id, update_block_and_draw_bar);
             break;
     }
 
@@ -319,9 +319,10 @@ void run_blocks() {
     pthread_attr_init(&at);
     pthread_attr_setstacksize(&at, 128);
 
-    for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++) run_block(BAR_STATE.right.array[i], &at);
-    for (size_t i = 0; i < BAR_STATE.center.n_blocks; i++) run_block(BAR_STATE.center.array[i], &at);
-    for (size_t i = 0; i < BAR_STATE.left.n_blocks; i++) run_block(BAR_STATE.left.array[i], &at);
+    for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++) run_block(&BAR_STATE.right.array[i], &at);
+    for (size_t i = 0; i < BAR_STATE.center.n_blocks; i++)
+        run_block(&BAR_STATE.center.array[i], &at);
+    for (size_t i = 0; i < BAR_STATE.left.n_blocks; i++) run_block(&BAR_STATE.left.array[i], &at);
 
     pthread_attr_destroy(&at);
 }
@@ -501,7 +502,7 @@ int parse_config(char* config_file) {
                 update_time = CONTINUOUS;
             } else {
                 update_time = strtol(value, NULL, 10);
-                if (errno == EINVAL || update_time < 0) {
+                if (errno == EINVAL || update_time <= 0) {
                     fprintf(
                         stderr,
                         "config:%zu: \033[31merror:\033[0m invalid block update time\n"
