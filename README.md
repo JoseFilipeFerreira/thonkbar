@@ -1,7 +1,6 @@
 # 🤔 Thonkbar
 
-yet another block based lemonbar wrapper
-
+minimalist block based lemonbar wrapper
 ## :link: Instalation
 
 From the [AUR](https://aur.archlinux.org/packages/thonkbar-git/) or manualy
@@ -15,14 +14,14 @@ make install
 
 The program reads a config file located at `~/.config/thonkbar/config`.
 
-There are four fields that can be added to the config
+There are four fields that can be defined in the config file
 
-| options   | result                             |
-| --------- | ---------------------------------- |
-| [config]  | general bar configs                |
-| [left]    | blocks on the left side of screen  |
-| [right]   | blocks on the right side of screen |
-| [center]  | blocks on the center of the screen |
+| options   | result                              |
+| --------- | ----------------------------------- |
+| [config]  | general bar configs                 |
+| [left]    | blocks on the left side of the bar  |
+| [right]   | blocks on the right side of the bar |
+| [center]  | blocks on the center of the bar     |
 
 ### general bar configs
 
@@ -47,7 +46,7 @@ type of delay to be used separated by a comma.
 If the path to the command to be executed starts with `script/` the bar will
 look at the folder `~/.config/thonkbar/scripts`
 
-Scripts used can output up to 3 lines each time it is run:
+Scripts used can output up to 3 lines:
 
 * text on the block
 * text colour (#RRGGBB)
@@ -56,20 +55,22 @@ Scripts used can output up to 3 lines each time it is run:
 The delay can be any of the following
 | options      | result                                                  |
 | ------------ | --------------------------------------------------------|
-| integer      | delay between executions in seconds                     |
+| integer      | delay (greater than 0) between executions in seconds    |
 | "ONCE"       | run the script only once on start-up                    |
 | "CONTINUOUS" | update the block every time the script gives a new line |
 
-Optionally a block can be updated via a signal. When you run the program
-information is outputted about each block. This also includes the bound signal.
+Optionally a block can be updated via a signal.
+Usefull information for each block is outputed when the bar startsk.
+This also includes the bound signal.
 
+#### Startup output for one block and how to remotely update it:
 ```bash
 script: <script>
     update frequency: <time>
     signal: <signal_id>
 ```
 
-To update a given block you can use the `pkill` program:
+Trigger manual update by sending the corresponding signal with `pkill`:
 
 ```bash
 pkill --signal <signal_id> thonkbar
@@ -77,9 +78,10 @@ pkill --signal <signal_id> thonkbar
 
 ## Examples
 
-* Config file that inserts a block on the right side that displays the time/date
-and runs every second and inserts a block on the left side that listens
-continuously to a script located at `~/.config/thonkbar/scripts/workspaces`
+* Config file with:
+  * custom delimiter character and color
+  * block on the right side of the bar that displays time/date (updates every second)
+  * block on the left side that listens continuously to a script located at `~/.config/thonkbar/scripts/workspaces`
 
 ```ini
 [config]
@@ -93,7 +95,8 @@ date '+%d/%m  %H:%M', 1
 scripts/workspaces, CONTINUOUS
  ```
 
-* My personal config can be found on my [dotfiles](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/config).
+* My personal [config](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/config)
+* Usefull scripts:
   * Script for [battery](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/battery)
   * Script for [wifi](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/wifi)
   * Script for [workspaces on i3](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/workspaces).
