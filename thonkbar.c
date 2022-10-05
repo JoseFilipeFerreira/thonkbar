@@ -145,7 +145,7 @@ int draw_side(char* buffer, struct Block_Array block_arr, char marker) {
 
         pthread_mutex_lock(&block.lock);
 
-        if (block.text) {
+        if (block.text && strlen(block.text) > 0) {
             if (block.underline_color) {
                 size += sprintf(
                     buffer + size,
