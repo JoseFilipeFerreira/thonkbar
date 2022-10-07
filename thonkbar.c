@@ -18,12 +18,18 @@
 
 #define BUFF_SIZE 1024
 
-int LEMONBAR_PIPE[2];
+int LEMONBAR_PIPE_STDIN[2];
+int LEMONBAR_PIPE_STDOUT[2];
 
 int trim(char* org, char* dest, char surround_char) {
     int r = 0;
     size_t beg = 0;
-    size_t end = strlen(org) - 1;
+    size_t size_org = strlen(org);
+    if (size_org == 0) {
+        dest = NULL;
+        return 0;
+    }
+    size_t end = size_org - 1;
     while (isspace(org[beg])) beg++;
     if (surround_char && org[beg] == surround_char) {
         r = 1;
@@ -41,6 +47,7 @@ int trim(char* org, char* dest, char surround_char) {
 struct Block {
     pthread_mutex_t lock;
     char* command;
+    char* button_command;
     char* text;
     char* text_color;
     char* underline_color;
@@ -146,6 +153,15 @@ int draw_side(char* buffer, struct Block_Array block_arr, char marker) {
         pthread_mutex_lock(&block.lock);
 
         if (block.text && strlen(block.text) > 0) {
+
+            if (block.button_command) {
+                size += sprintf(buffer + size, " ");
+                for (size_t button_id = 1; button_id < 6; button_id++) {
+                    size +=
+                        sprintf(buffer + size, "%%{A%zu:%zu %zu:}", button_id, block.id, button_id);
+                }
+            }
+
             if (block.underline_color) {
                 size += sprintf(
                     buffer + size,
@@ -162,6 +178,14 @@ int draw_side(char* buffer, struct Block_Array block_arr, char marker) {
                     block.underline_color ? block.underline_color : "-",
                     block.text);
             }
+
+            if (block.button_command) {
+                size += sprintf(buffer + size, " ");
+                for (size_t button_id = 1; button_id < 6; button_id++) {
+                    size += sprintf(buffer + size, "%%{A}");
+                }
+            }
+
         } else {
             print_delimiter = 0;
         }
@@ -190,7 +214,7 @@ void draw_bar() {
 
     buffer[offset] = '\n';
 
-    write(LEMONBAR_PIPE[1], buffer, offset + 1);
+    write(LEMONBAR_PIPE_STDIN[1], buffer, offset + 1);
 }
 
 void update_block(struct Block* block) {
@@ -327,32 +351,52 @@ void run_blocks() {
     pthread_attr_destroy(&at);
 }
 
-void insert_block(enum BAR_MODE bar_mode, char* comand, int delay) {
+char* interpert_path(char* command) {
+    if (strstr(command, "scripts/") == command) {
+        char* old = command;
+        asprintf(&command, "~/.config/thonkbar/%s", command);
+        free(old);
+    }
+    return command;
+}
+
+void insert_block(enum BAR_MODE bar_mode, char* comand, char* button_command, int delay) {
     static size_t last_id_right = 34;
     static size_t last_id_other = 64;
 
-    char* block_comand = strdup(comand);
+    char* block_comand = interpert_path(strdup(comand));
+    char* block_button_comand;
+    if (button_command) {
+        block_button_comand = interpert_path(strdup(button_command));
+    } else {
+        block_button_comand = NULL;
+    }
 
     size_t new_id = (bar_mode == right) ? last_id_right++ : last_id_other--;
 
-    if (strstr(block_comand, "scripts/") == block_comand) {
-        char* old = block_comand;
-        asprintf(&block_comand, "~/.config/thonkbar/%s", block_comand);
-        free(old);
-    }
+    printf("script: %s\n", block_comand);
 
     if (delay == CONTINUOUS)
-        printf("script: %s\n    CONTINUOUS\n\n", block_comand);
+        printf("    CONTINUOUS\n");
     else if (delay == ONCE)
-        printf("script: %s\n    signal: %zu\n\n", block_comand, new_id);
+        printf("    signal: %zu\n", new_id);
     else
         printf(
-            "script: %s\n    update frequency: %ds\n    signal: %zu\n\n",
-            block_comand,
+            "    update frequency: %ds\n"
+            "    signal: %zu\n",
             delay,
             new_id);
 
-    struct Block block = {.command = block_comand, .delay = delay, .id = new_id};
+    if (block_button_comand) {
+        printf("    button handler: %s", block_button_comand);
+    }
+    printf("\n\n");
+
+    struct Block block = {
+        .command = block_comand,
+        .button_command = block_button_comand,
+        .delay = delay,
+        .id = new_id};
     pthread_mutex_init(&block.lock, NULL);
 
     insert(get_block_array(bar_mode), &block);
@@ -481,27 +525,33 @@ int parse_config(char* config_file) {
                 return 0;
             }
         } else {
-            char k[128], v[128];
-            if (sscanf(line, "%127[^,],%127[^\n]%*c", k, v) != 2) {
+            char c[128] = {0}, t[128] = {0}, b[128] = {0};
+
+            if (sscanf(line, "%127[^,],%127[^,],%127[^\n]%*c", c, t, b) == 3) {
+                puts("parsed 3");
+            } else if (sscanf(line, "%127[^,],%127[^\n]%*c", c, t) != 2) {
                 fprintf(
                     stderr,
                     "config:%zu: \033[31merror:\033[0m invalid block line format\n"
-                    "Must be in the format: <command>, <duration>\n",
+                    "Must be in the format:"
+                    "    <command>, <duration>\n"
+                    "    <command>, <duration>, <button handler script>\n",
                     n_lines);
                 return 0;
             }
 
-            char key[128] = {0}, value[128] = {0};
-            trim(k, key, '"');
-            trim(v, value, '"');
+            char command[128] = {0}, time[128] = {0}, button[128] = {0};
+            trim(c, command, '"');
+            trim(t, time, '"');
+            trim(b, button, '"');
 
             int update_time;
-            if (strstr(value, "ONCE") != NULL) {
+            if (strstr(time, "ONCE") != NULL) {
                 update_time = ONCE;
-            } else if (strstr(value, "CONTINUOUS") != NULL) {
+            } else if (strstr(time, "CONTINUOUS") != NULL) {
                 update_time = CONTINUOUS;
             } else {
-                update_time = strtol(value, NULL, 10);
+                update_time = strtol(time, NULL, 10);
                 if (errno == EINVAL || update_time <= 0) {
                     fprintf(
                         stderr,
@@ -511,7 +561,7 @@ int parse_config(char* config_file) {
                     return 0;
                 }
             }
-            insert_block(bar_mode, key, update_time);
+            insert_block(bar_mode, command, strlen(button) > 0 ? button : NULL, update_time);
         }
     }
 
@@ -521,13 +571,20 @@ int parse_config(char* config_file) {
 }
 
 int fork_lemonbar() {
-    char* argv[16] = {NULL};
+    char* argv[32] = {NULL};
     char** iter = argv;
 
     *iter++ = "lemonbar";
     *iter++ = "-p";
     *iter++ = "-u";
     *iter++ = BAR_CONFIG.underline_width;
+    *iter++ = "-a";
+    char max_clickable[10];
+    sprintf(
+        max_clickable,
+        "%zu",
+        (BAR_STATE.left.n_blocks + BAR_STATE.right.n_blocks + BAR_STATE.center.n_blocks) * 5);
+    *iter++ = max_clickable;
 
     if (BAR_CONFIG.font) {
         *iter++ = "-f";
@@ -548,22 +605,54 @@ int fork_lemonbar() {
     if (BAR_CONFIG.bar_position == bottom) *iter++ = "-b";
     if (BAR_CONFIG.docking_mode == force) *iter++ = "-d";
 
-    if (pipe(LEMONBAR_PIPE) < 0) exit(1);
+    if (pipe(LEMONBAR_PIPE_STDIN) < 0) exit(1);
+    if (pipe(LEMONBAR_PIPE_STDOUT) < 0) exit(1);
 
     switch (fork()) {
+        // error
         case -1:
             exit(1);
             break;
+        // child process
         case 0:
-            dup2(LEMONBAR_PIPE[0], STDIN_FILENO);
-            close(LEMONBAR_PIPE[0]);
-            close(LEMONBAR_PIPE[1]);
+            dup2(LEMONBAR_PIPE_STDIN[0], 0);
+            close(LEMONBAR_PIPE_STDIN[0]);
+            dup2(LEMONBAR_PIPE_STDOUT[1], 1);
+            close(LEMONBAR_PIPE_STDOUT[1]);
+
             execvp("lemonbar", argv);
             break;
-        default:
-            close(LEMONBAR_PIPE[0]);
+        // parent process
+        default: {
             run_blocks();
+
+            char line[BUFF_SIZE];
+            FILE* lemonbar_output = fdopen(LEMONBAR_PIPE_STDOUT[0], "r");
+            for (size_t n_lines = 1; fgets(line, BUFF_SIZE, lemonbar_output); n_lines++) {
+                size_t block_id;
+                size_t button_id;
+                sscanf(line, "%zu %zu", &block_id, &button_id);
+                struct Block* block = get_block(block_id);
+                switch (fork()) {
+                    // child process
+                    case 0:
+                        printf("> %s %zu\n", block->command, button_id);
+
+                        char* command;
+                        asprintf(&command, "%s %zu", block->button_command, button_id);
+                        FILE* fp = popen(command, "r");
+                        // process output
+                        pclose(fp);
+                        free(command);
+                        break;
+                    // parent process
+                    default:
+                        break;
+                }
+            }
+            fclose(lemonbar_output);
             break;
+        }
     }
 
     return 0;
@@ -587,6 +676,8 @@ int main(void) {
     free(config_file);
 
     fork_lemonbar();
+
+    sleep(10);
 
     pthread_exit(NULL);
 }
