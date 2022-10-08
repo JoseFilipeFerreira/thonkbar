@@ -23,7 +23,7 @@ There are four fields that can be defined in the config file
 | [right]   | blocks on the right side of the bar |
 | [center]  | blocks on the center of the bar     |
 
-### general bar configs
+### General Bar Configs
 
 ```ini
 [config]
@@ -40,19 +40,28 @@ docking_mode = normal|force
 
 ### 📡 Create and Update blocks
 
-To add a block first write the command to be run on the block and secondly the
-type of delay to be used separated by a comma.
+To create a block you just need to add a line in one of the following formats:
 
-If the path to the command to be executed starts with `script/` the bar will
-look at the folder `~/.config/thonkbar/scripts`
+```
+<command>, <update>
+<command>, <update>, <button handler>
+```
+
+#### <script>
+
+Is a script that outputs a suported block format. If the path to the command to
+be executed starts with `script/` the bar will look at the folder
+`~/.config/thonkbar/scripts`
 
 Scripts used can output up to 3 lines:
+ - text on the block
+ - text colour (#RRGGBB)
+ - underline colour (#RRGGBB)
 
-* text on the block
-* text colour (#RRGGBB)
-* underline colour (#RRGGBB)
+#### <update>
 
-The delay can be any of the following
+Represents the script update kind/frequency. Can be any of the following:
+
 | options      | result                                                  |
 | ------------ | --------------------------------------------------------|
 | integer      | delay (greater than 0) between executions in seconds    |
@@ -60,21 +69,21 @@ The delay can be any of the following
 | "CONTINUOUS" | update the block every time the script gives a new line |
 
 Optionally a block can be updated via a signal.
-Usefull information for each block is outputed when the bar startsk.
+Usefull information for each block is outputed when the bar starts.
 This also includes the bound signal.
 
-#### Startup output for one block and how to remotely update it:
-```bash
-script: <script>
-    update frequency: <time>
-    signal: <signal_id>
-```
-
-Trigger manual update by sending the corresponding signal with `pkill`:
+#### <button handler>
+Is a script that is called with the following arguments whenever a mouse click
+is registered on the bar.
 
 ```bash
-pkill --signal <signal_id> thonkbar
+<button handler> <button> <id>
 ```
+
+where:
+ - `<button>` can be: `LEFT`, `CENTER`, `RIGHT`, `UP`, and `DOWN`
+ - `<id>` is the signal bound to the block (usefull to update the block after
+     handling the button press
 
 ## Examples
 

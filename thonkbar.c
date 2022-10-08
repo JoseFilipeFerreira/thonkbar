@@ -528,7 +528,6 @@ int parse_config(char* config_file) {
             char c[128] = {0}, t[128] = {0}, b[128] = {0};
 
             if (sscanf(line, "%127[^,],%127[^,],%127[^\n]%*c", c, t, b) == 3) {
-                puts("parsed 3");
             } else if (sscanf(line, "%127[^,],%127[^\n]%*c", c, t) != 2) {
                 fprintf(
                     stderr,
@@ -632,18 +631,31 @@ int fork_lemonbar() {
                 size_t block_id;
                 size_t button_id;
                 sscanf(line, "%zu %zu", &block_id, &button_id);
+
+                char* button_str;
+                switch (button_id) {
+                    case 1:
+                        button_str = "LEFT";
+                        break;
+                    case 2:
+                        button_str = "CENTER";
+                        break;
+                    case 3:
+                        button_str = "RIGHT";
+                        break;
+                    case 4:
+                        button_str = "UP";
+                        break;
+                    default:
+                        button_str = "DOWN";
+                        break;
+                }
+
                 struct Block* block = get_block(block_id);
                 switch (fork()) {
                     // child process
                     case 0:
-                        printf("> %s %zu\n", block->command, button_id);
-
-                        char* command;
-                        asprintf(&command, "%s %zu", block->button_command, button_id);
-                        FILE* fp = popen(command, "r");
-                        // process output
-                        pclose(fp);
-                        free(command);
+                        execlp(block->button_command, block->button_command, button_str, NULL);
                         break;
                     // parent process
                     default:
