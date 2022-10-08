@@ -46,7 +46,7 @@ To create a block you just need to add a line in one of the following formats:
 <command>, <update>
 <command>, <update>, <button handler>
 ```
-
+Where:
 #### \<script\>
 
 Is a script that outputs a suported block format. If the path to the command to
@@ -68,9 +68,10 @@ Represents the script update kind/frequency. Can be any of the following:
 | "ONCE"       | run the script only once on start-up                    |
 | "CONTINUOUS" | update the block every time the script gives a new line |
 
-Optionally a block can be updated via a signal.
-Usefull information for each block is outputed when the bar starts.
-This also includes the bound signal.
+Optionally a block can be updated via the corresponding signal via `pkill`.
+
+Usefull information for each block (including the bound signal) is outputed when
+the bar starts.
 
 #### \<button handler\>
 Is a script that is called with the following arguments whenever a mouse click
@@ -81,9 +82,9 @@ is registered on the bar.
 ```
 
 where:
- - `<button>` can be: `LEFT`, `CENTER`, `RIGHT`, `UP`, and `DOWN`
- - `<id>` is the signal bound to the block (usefull to update the block after
-     handling the button press
+ - `<button>` can be: `LEFT`, `CENTER`, `RIGHT`, `UP` or `DOWN`
+ - `<id>` is the signal bound to the block (usefull for updating the block after
+     handling the button press)
 
 ## Examples
 
