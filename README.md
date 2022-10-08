@@ -47,7 +47,7 @@ To create a block you just need to add a line in one of the following formats:
 <command>, <update>, <button handler>
 ```
 
-#### <script>
+#### \<script\>
 
 Is a script that outputs a suported block format. If the path to the command to
 be executed starts with `script/` the bar will look at the folder
@@ -58,7 +58,7 @@ Scripts used can output up to 3 lines:
  - text colour (#RRGGBB)
  - underline colour (#RRGGBB)
 
-#### <update>
+#### \<update\>
 
 Represents the script update kind/frequency. Can be any of the following:
 
@@ -72,7 +72,7 @@ Optionally a block can be updated via a signal.
 Usefull information for each block is outputed when the bar starts.
 This also includes the bound signal.
 
-#### <button handler>
+#### \<button handler\>
 Is a script that is called with the following arguments whenever a mouse click
 is registered on the bar.
 
