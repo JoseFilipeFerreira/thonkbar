@@ -1,4 +1,4 @@
-name: C/C++ CI
+name: C Make CI
 
 on:
   push:
@@ -8,15 +8,9 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
-    - name: configure
-      run: ./configure
     - name: make
       run: make
-    - name: make check
-      run: make check
-
