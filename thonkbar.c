@@ -114,18 +114,22 @@ struct Config {
     char* background_color;
     char* foreground_color;
     char* text_offset;
+    size_t right_padding;
+    size_t left_padding;
     enum BAR_POSITON bar_position;
     enum DOCKING_MODE docking_mode;
 };
 
 struct Config BAR_CONFIG = {
-    .delimiter = "  |  ",
+    .delimiter = " | ",
     .delimiter_color = "#FFFFFF",
     .font = NULL,
     .underline_width = "2",
     .background_color = NULL,
     .foreground_color = NULL,
     .text_offset = NULL,
+    .right_padding = 0,
+    .left_padding = 0,
     .bar_position = top,
     .docking_mode = normal};
 
@@ -142,8 +146,12 @@ struct Block* get_block(size_t signal_id) {
     return NULL;
 }
 
-int draw_side(char* buffer, struct Block_Array block_arr, char marker) {
+int draw_side(char* buffer, struct Block_Array block_arr, char marker, int left_padding, int right_padding) {
     int size = sprintf(buffer, "%%{%c}", marker);
+
+    for(int i = 0; i < left_padding; i++){
+        size += sprintf(buffer + size, " ");
+    }
 
     int print_delimiter = 1;
     for (size_t i = 0; i < block_arr.n_blocks; i++) {
@@ -180,7 +188,6 @@ int draw_side(char* buffer, struct Block_Array block_arr, char marker) {
             }
 
             if (block.button_command) {
-                size += sprintf(buffer + size, " ");
                 for (size_t button_id = 1; button_id < 6; button_id++) {
                     size += sprintf(buffer + size, "%%{A}");
                 }
@@ -194,10 +201,14 @@ int draw_side(char* buffer, struct Block_Array block_arr, char marker) {
 
         if (i < block_arr.n_blocks - 1 && print_delimiter) {
             size += sprintf(
-                buffer + size, " %%{F%s}%s", BAR_CONFIG.delimiter_color, BAR_CONFIG.delimiter);
+                buffer + size, "%%{F%s}%s", BAR_CONFIG.delimiter_color, BAR_CONFIG.delimiter);
         }
 
         print_delimiter = 1;
+    }
+
+    for(int i = 0; i < right_padding; i++){
+        size += sprintf(buffer + size, " ");
     }
 
     size += sprintf(buffer + size, "%%{F-}");
@@ -208,12 +219,11 @@ int draw_side(char* buffer, struct Block_Array block_arr, char marker) {
 void draw_bar() {
     char buffer[4096];
     int offset = 0;
-    offset += draw_side(buffer, BAR_STATE.left, 'l');
-    offset += draw_side(buffer + offset, BAR_STATE.center, 'c');
-    offset += draw_side(buffer + offset, BAR_STATE.right, 'r');
+    offset += draw_side(buffer, BAR_STATE.left, 'l', BAR_CONFIG.left_padding, 0);
+    offset += draw_side(buffer + offset, BAR_STATE.center, 'c', 0, 0);
+    offset += draw_side(buffer + offset, BAR_STATE.right, 'r', 0, BAR_CONFIG.right_padding);
 
     buffer[offset] = '\n';
-
     write(LEMONBAR_PIPE_STDIN[1], buffer, offset + 1);
 }
 
@@ -517,6 +527,28 @@ int parse_config(char* config_file) {
                 }
                 BAR_CONFIG.underline_width = strdup(value);
 
+            } else if (strstr(key, "left_padding") != NULL){
+                long lvalue = strtol(value, NULL, 10);
+                if (errno == EINVAL || lvalue < 0) {
+                    fprintf(
+                        stderr,
+                        "config:%zu: \033[31merror:\033[0m invalid left_padding\n"
+                        "Can only be an integer greater than 0\n",
+                        n_lines);
+                    return 0;
+                }
+                BAR_CONFIG.left_padding = lvalue;
+            } else if (strstr(key, "right_padding") != NULL){
+                long lvalue = strtol(value, NULL, 10);
+                if (errno == EINVAL || lvalue < 0) {
+                    fprintf(
+                        stderr,
+                        "config:%zu: \033[31merror:\033[0m invalid right_padding\n"
+                        "Can only be an integer greater than 0\n",
+                        n_lines);
+                    return 0;
+                }
+                BAR_CONFIG.right_padding = lvalue;
             } else {
                 fprintf(
                     stderr,
@@ -651,11 +683,22 @@ int fork_lemonbar() {
                         break;
                 }
 
+                char id_str[20];
+                sprintf(id_str, "%zu", block_id);
+
                 struct Block* block = get_block(block_id);
                 switch (fork()) {
                     // child process
                     case 0:
-                        execlp(block->button_command, block->button_command, button_str, NULL);
+                        printf(
+                            "> %s %s %s %s\n",
+                            block->button_command,
+                            block->button_command,
+                            button_str,
+                            id_str);
+                        execlp(
+                            block->button_command, block->button_command, button_str, id_str, (char*) NULL);
+                        printf("failed\n");
                         break;
                     // parent process
                     default:

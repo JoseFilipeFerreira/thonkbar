@@ -34,6 +34,8 @@ underline_width = <integer>
 background_color = "#AARRGGBB"
 foreground_color = "#AARRGGBB"
 text_offset = <integer>
+left_padding = <integer>
+right_padding = <integer>
 position = top|bottom
 docking_mode = normal|force
 ```
@@ -50,8 +52,8 @@ Where:
 #### \<script\>
 
 Is a script that outputs a suported block format. If the path to the command to
-be executed starts with `script/` the bar will look at the folder
-`~/.config/thonkbar/scripts`
+be executed starts with `script/` the bar will look for the script inside the folder
+`~/.config/thonkbar/scripts`.
 
 Scripts used can output up to 3 lines:
  - text on the block
