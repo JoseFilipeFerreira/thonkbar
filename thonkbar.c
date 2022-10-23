@@ -11,12 +11,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define CONTINUOUS -1
 #define ONCE 0
 
 #define BUFF_SIZE 1024
+#define MAX_FONTS 5
 
 int LEMONBAR_PIPE_STDIN[2];
 int LEMONBAR_PIPE_STDOUT[2];
@@ -109,7 +111,8 @@ enum DOCKING_MODE { normal, force };
 struct Config {
     char* delimiter;
     char* delimiter_color;
-    char* font;
+    size_t n_fonts;
+    char* fonts[MAX_FONTS];
     char* underline_width;
     char* background_color;
     char* foreground_color;
@@ -123,7 +126,8 @@ struct Config {
 struct Config BAR_CONFIG = {
     .delimiter = " | ",
     .delimiter_color = "#FFFFFF",
-    .font = NULL,
+    .n_fonts = 0,
+    .fonts = {NULL, NULL, NULL, NULL, NULL},
     .underline_width = "2",
     .background_color = NULL,
     .foreground_color = NULL,
@@ -146,10 +150,11 @@ struct Block* get_block(size_t signal_id) {
     return NULL;
 }
 
-int draw_side(char* buffer, struct Block_Array block_arr, char marker, int left_padding, int right_padding) {
+int draw_side(
+    char* buffer, struct Block_Array block_arr, char marker, int left_padding, int right_padding) {
     int size = sprintf(buffer, "%%{%c}", marker);
 
-    for(int i = 0; i < left_padding; i++){
+    for (int i = 0; i < left_padding; i++) {
         size += sprintf(buffer + size, " ");
     }
 
@@ -207,7 +212,7 @@ int draw_side(char* buffer, struct Block_Array block_arr, char marker, int left_
         print_delimiter = 1;
     }
 
-    for(int i = 0; i < right_padding; i++){
+    for (int i = 0; i < right_padding; i++) {
         size += sprintf(buffer + size, " ");
     }
 
@@ -361,23 +366,14 @@ void run_blocks() {
     pthread_attr_destroy(&at);
 }
 
-char* interpert_path(char* command) {
-    if (strstr(command, "scripts/") == command) {
-        char* old = command;
-        asprintf(&command, "~/.config/thonkbar/%s", command);
-        free(old);
-    }
-    return command;
-}
-
 void insert_block(enum BAR_MODE bar_mode, char* comand, char* button_command, int delay) {
     static size_t last_id_right = 34;
     static size_t last_id_other = 64;
 
-    char* block_comand = interpert_path(strdup(comand));
+    char* block_comand = strdup(comand);
     char* block_button_comand;
     if (button_command) {
-        block_button_comand = interpert_path(strdup(button_command));
+        block_button_comand = strdup(button_command);
     } else {
         block_button_comand = NULL;
     }
@@ -398,9 +394,9 @@ void insert_block(enum BAR_MODE bar_mode, char* comand, char* button_command, in
             new_id);
 
     if (block_button_comand) {
-        printf("    button handler: %s", block_button_comand);
+        printf("    button handler: %s\n", block_button_comand);
     }
-    printf("\n\n");
+    printf("\n");
 
     struct Block block = {
         .command = block_comand,
@@ -424,7 +420,7 @@ int parse_config(char* config_file) {
 
     enum BAR_MODE bar_mode = -1;
 
-    for (size_t n_lines = 1; fgets(line, BUFF_SIZE, f); n_lines++) {
+    for (size_t n_lines = 1; fgets(line, sizeof(line), f); n_lines++) {
         if (line[0] == '#' || line[0] == '\n') {
             continue;
         }
@@ -472,7 +468,16 @@ int parse_config(char* config_file) {
             } else if (strstr(key, "delimiter") != NULL) {
                 BAR_CONFIG.delimiter = strdup(value);
             } else if (strstr(key, "font") != NULL) {
-                BAR_CONFIG.font = strdup(value);
+                if (BAR_CONFIG.n_fonts > 4) {
+                    fprintf(
+                        stderr,
+                        "config:%zu: \033[31merror:\033[0m too many diferent fonts\n"
+                        "    Must be less than %d:\n",
+                        n_lines,
+                        MAX_FONTS);
+                    return 0;
+                }
+                BAR_CONFIG.fonts[BAR_CONFIG.n_fonts++] = strdup(value);
             } else if (strstr(key, "background_color") != NULL) {
                 BAR_CONFIG.background_color = strdup(value);
             } else if (strstr(key, "foreground_color") != NULL) {
@@ -527,7 +532,7 @@ int parse_config(char* config_file) {
                 }
                 BAR_CONFIG.underline_width = strdup(value);
 
-            } else if (strstr(key, "left_padding") != NULL){
+            } else if (strstr(key, "left_padding") != NULL) {
                 long lvalue = strtol(value, NULL, 10);
                 if (errno == EINVAL || lvalue < 0) {
                     fprintf(
@@ -538,7 +543,7 @@ int parse_config(char* config_file) {
                     return 0;
                 }
                 BAR_CONFIG.left_padding = lvalue;
-            } else if (strstr(key, "right_padding") != NULL){
+            } else if (strstr(key, "right_padding") != NULL) {
                 long lvalue = strtol(value, NULL, 10);
                 if (errno == EINVAL || lvalue < 0) {
                     fprintf(
@@ -601,6 +606,72 @@ int parse_config(char* config_file) {
     return 1;
 }
 
+int button_handler() {
+    char line[BUFF_SIZE];
+    FILE* lemonbar_output = fdopen(LEMONBAR_PIPE_STDOUT[0], "r");
+    for (size_t n_lines = 1; fgets(line, sizeof(line), lemonbar_output); n_lines++) {
+        size_t block_id;
+        size_t button_id;
+        sscanf(line, "%zu %zu", &block_id, &button_id);
+
+        char* button_str = NULL;
+        switch (button_id) {
+            case 1:
+                button_str = "LEFT";
+                break;
+            case 2:
+                button_str = "CENTER";
+                break;
+            case 3:
+                button_str = "RIGHT";
+                break;
+            case 4:
+                button_str = "UP";
+                break;
+            case 5:
+                button_str = "DOWN";
+                break;
+            default:
+                break;
+        }
+
+        if (!button_str) {
+            printf("> invalid button id: %s\n", line);
+            continue;
+        }
+
+        struct Block* block = get_block(block_id);
+        if (!block) {
+            printf("> invalid block id: %s\n", line);
+            continue;
+        }
+
+        char* id_str = NULL;
+        asprintf(&id_str, "%zu", block_id);
+
+        switch (fork()) {
+            // child process
+            case 0:
+                printf("> %s %s %s\n", block->button_command, button_str, id_str);
+                execlp(
+                    block->button_command, block->button_command, button_str, id_str, (char*) NULL);
+                printf("failed\n");
+                break;
+            // parent process
+            default:
+                wait(NULL);
+                break;
+        }
+
+        free(id_str);
+    }
+    fclose(lemonbar_output);
+
+    return 0;
+}
+
+int LEMONBAR_ID = -1;
+
 int fork_lemonbar() {
     char* argv[32] = {NULL};
     char** iter = argv;
@@ -617,9 +688,9 @@ int fork_lemonbar() {
         (BAR_STATE.left.n_blocks + BAR_STATE.right.n_blocks + BAR_STATE.center.n_blocks) * 5);
     *iter++ = max_clickable;
 
-    if (BAR_CONFIG.font) {
+    for (size_t i = 0; i < BAR_CONFIG.n_fonts; i++) {
         *iter++ = "-f";
-        *iter++ = BAR_CONFIG.font;
+        *iter++ = BAR_CONFIG.fonts[i];
     };
     if (BAR_CONFIG.background_color) {
         *iter++ = "-B";
@@ -639,7 +710,7 @@ int fork_lemonbar() {
     if (pipe(LEMONBAR_PIPE_STDIN) < 0) exit(1);
     if (pipe(LEMONBAR_PIPE_STDOUT) < 0) exit(1);
 
-    switch (fork()) {
+    switch (LEMONBAR_ID = fork()) {
         // error
         case -1:
             exit(1);
@@ -655,57 +726,6 @@ int fork_lemonbar() {
             break;
         // parent process
         default: {
-            run_blocks();
-
-            char line[BUFF_SIZE];
-            FILE* lemonbar_output = fdopen(LEMONBAR_PIPE_STDOUT[0], "r");
-            for (size_t n_lines = 1; fgets(line, BUFF_SIZE, lemonbar_output); n_lines++) {
-                size_t block_id;
-                size_t button_id;
-                sscanf(line, "%zu %zu", &block_id, &button_id);
-
-                char* button_str;
-                switch (button_id) {
-                    case 1:
-                        button_str = "LEFT";
-                        break;
-                    case 2:
-                        button_str = "CENTER";
-                        break;
-                    case 3:
-                        button_str = "RIGHT";
-                        break;
-                    case 4:
-                        button_str = "UP";
-                        break;
-                    default:
-                        button_str = "DOWN";
-                        break;
-                }
-
-                char id_str[20];
-                sprintf(id_str, "%zu", block_id);
-
-                struct Block* block = get_block(block_id);
-                switch (fork()) {
-                    // child process
-                    case 0:
-                        printf(
-                            "> %s %s %s %s\n",
-                            block->button_command,
-                            block->button_command,
-                            button_str,
-                            id_str);
-                        execlp(
-                            block->button_command, block->button_command, button_str, id_str, (char*) NULL);
-                        printf("failed\n");
-                        break;
-                    // parent process
-                    default:
-                        break;
-                }
-            }
-            fclose(lemonbar_output);
             break;
         }
     }
@@ -713,15 +733,22 @@ int fork_lemonbar() {
     return 0;
 }
 
+void exit_handler(int signal) {
+    if (LEMONBAR_ID > 0) {
+        kill(LEMONBAR_ID, signal);
+    }
+    exit(0);
+}
+
 int main(void) {
+    signal(SIGTERM, exit_handler);
+
     BAR_STATE.left = make(10);
     BAR_STATE.center = make(10);
     BAR_STATE.right = make(10);
 
     const char* HOME = getenv("HOME");
-    if (!HOME) {
-        HOME = getpwuid(getuid())->pw_dir;
-    }
+    if (!HOME) HOME = getpwuid(getuid())->pw_dir;
 
     char* config_file;
     asprintf(&config_file, "%s/.config/thonkbar/config", HOME);
@@ -731,6 +758,10 @@ int main(void) {
     free(config_file);
 
     fork_lemonbar();
+
+    run_blocks();
+
+    button_handler();
 
     sleep(10);
 

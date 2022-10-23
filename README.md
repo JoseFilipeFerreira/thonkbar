@@ -40,6 +40,9 @@ position = top|bottom
 docking_mode = normal|force
 ```
 
+`note:` to add fallback fonts just add more lines in the format above (up to a
+maximum of 5)
+
 ### 📡 Create and Update blocks
 
 To create a block you just need to add a line in one of the following formats:
@@ -49,16 +52,14 @@ To create a block you just need to add a line in one of the following formats:
 <command>, <update>, <button handler>
 ```
 Where:
-#### \<script\>
+#### \<command\>
 
-Is a script that outputs a suported block format. If the path to the command to
-be executed starts with `script/` the bar will look for the script inside the folder
-`~/.config/thonkbar/scripts`.
+Is a command in the PATH that outputs a suported block format.
 
-Scripts used can output up to 3 lines:
+Commands used can output up to 3 lines:
  - text on the block
- - text colour (#RRGGBB)
- - underline colour (#RRGGBB)
+ - text color (#RRGGBB)
+ - underline color (#RRGGBB)
 
 #### \<update\>
 
