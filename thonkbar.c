@@ -73,15 +73,14 @@ struct Block_Array make(size_t max) {
     return block_arr;
 }
 
-void insert(struct Block_Array* block_arr, struct Block* block) {
-    if (block_arr->n_blocks >= block_arr->max_blocks) {
-        block_arr->array =
-            realloc(block_arr->array, sizeof(struct Block) * block_arr->max_blocks * 2);
-        block_arr->max_blocks *= 2;
+void insert(struct Block_Array* blocks, struct Block* block) {
+    if (blocks->n_blocks >= blocks->max_blocks) {
+        blocks->array = realloc(blocks->array, sizeof(struct Block) * blocks->max_blocks * 2);
+        blocks->max_blocks *= 2;
     }
 
-    block_arr->array[block_arr->n_blocks] = *block;
-    block_arr->n_blocks++;
+    blocks->array[blocks->n_blocks] = *block;
+    blocks->n_blocks++;
 }
 
 enum BAR_MODE { left, right, center, config };
@@ -138,20 +137,29 @@ struct Config BAR_CONFIG = {
     .docking_mode = normal};
 
 struct Block* get_block(size_t signal_id) {
-    for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++)
-        if (BAR_STATE.right.array[i].id == signal_id) return &BAR_STATE.right.array[i];
+    for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++) {
+        if (BAR_STATE.right.array[i].id == signal_id) {
+            return &BAR_STATE.right.array[i];
+        }
+    }
 
-    for (size_t i = 0; i < BAR_STATE.center.n_blocks; i++)
-        if (BAR_STATE.center.array[i].id == signal_id) return &BAR_STATE.center.array[i];
+    for (size_t i = 0; i < BAR_STATE.center.n_blocks; i++) {
+        if (BAR_STATE.center.array[i].id == signal_id) {
+            return &BAR_STATE.center.array[i];
+        }
+    }
 
-    for (size_t i = 0; i < BAR_STATE.left.n_blocks; i++)
-        if (BAR_STATE.left.array[i].id == signal_id) return &BAR_STATE.left.array[i];
+    for (size_t i = 0; i < BAR_STATE.left.n_blocks; i++) {
+        if (BAR_STATE.left.array[i].id == signal_id) {
+            return &BAR_STATE.left.array[i];
+        }
+    }
 
     return NULL;
 }
 
 int draw_side(
-    char* buffer, struct Block_Array block_arr, char marker, int left_padding, int right_padding) {
+    char* buffer, struct Block_Array blocks, char marker, int left_padding, int right_padding) {
     int size = sprintf(buffer, "%%{%c}", marker);
 
     for (int i = 0; i < left_padding; i++) {
@@ -159,9 +167,9 @@ int draw_side(
     }
 
     int print_delimiter = 1;
-    for (size_t i = 0; i < block_arr.n_blocks; i++) {
+    for (size_t i = 0; i < blocks.n_blocks; i++) {
 
-        struct Block block = block_arr.array[i];
+        struct Block block = blocks.array[i];
 
         pthread_mutex_lock(&block.lock);
 
@@ -202,9 +210,9 @@ int draw_side(
             print_delimiter = 0;
         }
 
-        pthread_mutex_unlock(&block_arr.array[i].lock);
+        pthread_mutex_unlock(&blocks.array[i].lock);
 
-        if (i < block_arr.n_blocks - 1 && print_delimiter) {
+        if (i < blocks.n_blocks - 1 && print_delimiter) {
             size += sprintf(
                 buffer + size, "%%{F%s}%s", BAR_CONFIG.delimiter_color, BAR_CONFIG.delimiter);
         }
@@ -358,29 +366,28 @@ void run_blocks() {
     pthread_attr_init(&at);
     pthread_attr_setstacksize(&at, 128);
 
-    for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++) run_block(&BAR_STATE.right.array[i], &at);
-    for (size_t i = 0; i < BAR_STATE.center.n_blocks; i++)
+    for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++) {
+        run_block(&BAR_STATE.right.array[i], &at);
+    }
+
+    for (size_t i = 0; i < BAR_STATE.center.n_blocks; i++) {
         run_block(&BAR_STATE.center.array[i], &at);
-    for (size_t i = 0; i < BAR_STATE.left.n_blocks; i++) run_block(&BAR_STATE.left.array[i], &at);
+    }
+
+    for (size_t i = 0; i < BAR_STATE.left.n_blocks; i++) {
+        run_block(&BAR_STATE.left.array[i], &at);
+    }
 
     pthread_attr_destroy(&at);
 }
 
-void insert_block(enum BAR_MODE bar_mode, char* comand, char* button_command, int delay) {
+void insert_block(enum BAR_MODE bar_mode, char* command, char* button_command, int delay) {
     static size_t last_id_right = 34;
     static size_t last_id_other = 64;
 
-    char* block_comand = strdup(comand);
-    char* block_button_comand;
-    if (button_command) {
-        block_button_comand = strdup(button_command);
-    } else {
-        block_button_comand = NULL;
-    }
-
     size_t new_id = (bar_mode == right) ? last_id_right++ : last_id_other--;
 
-    printf("script: %s\n", block_comand);
+    printf("script: %s\n", command);
 
     if (delay == CONTINUOUS)
         printf("    CONTINUOUS\n");
@@ -393,16 +400,17 @@ void insert_block(enum BAR_MODE bar_mode, char* comand, char* button_command, in
             delay,
             new_id);
 
-    if (block_button_comand) {
-        printf("    button handler: %s\n", block_button_comand);
+    if (button_command) {
+        printf("    button handler: %s\n", button_command);
     }
     printf("\n");
 
     struct Block block = {
-        .command = block_comand,
-        .button_command = block_button_comand,
+        .command = strdup(command),
+        .button_command = button_command ? strdup(button_command) : NULL,
         .delay = delay,
         .id = new_id};
+
     pthread_mutex_init(&block.lock, NULL);
 
     insert(get_block_array(bar_mode), &block);
@@ -421,6 +429,7 @@ int parse_config(char* config_file) {
     enum BAR_MODE bar_mode = -1;
 
     for (size_t n_lines = 1; fgets(line, sizeof(line), f); n_lines++) {
+
         if (line[0] == '#' || line[0] == '\n') {
             continue;
         }
