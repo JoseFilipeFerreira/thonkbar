@@ -381,33 +381,47 @@ void run_blocks() {
     pthread_attr_destroy(&at);
 }
 
-void insert_block(enum BAR_MODE bar_mode, char* command, char* button_command, int delay) {
+char* parsed_dir(char* dir){
+    char* parsed_dir = NULL;
+
+    if (strstr(dir, "scripts/") == dir) {
+        asprintf(&parsed_dir, "%s/.config/thonkbar/%s", getpwuid(getuid())->pw_dir, dir);
+    } else {
+        parsed_dir = strdup(dir);
+    }
+
+    return parsed_dir;
+}
+
+void insert_block(enum BAR_MODE bar_mode, char* block_command, char* button_command, int delay) {
     static size_t last_id_right = 34;
     static size_t last_id_other = 64;
 
     size_t new_id = (bar_mode == right) ? last_id_right++ : last_id_other--;
 
-    printf("script: %s\n", command);
+    char* block_command_owned = parsed_dir(block_command);
+
+    printf("script: %s\n", block_command_owned);
+
+    char* button_command_owned = NULL;
+    if (button_command){
+        button_command_owned = parsed_dir(button_command);
+        printf("    button handler: %s\n", button_command_owned);
+    }
+
 
     if (delay == CONTINUOUS)
         printf("    CONTINUOUS\n");
     else if (delay == ONCE)
         printf("    signal: %zu\n", new_id);
     else
-        printf(
-            "    update frequency: %ds\n"
-            "    signal: %zu\n",
-            delay,
-            new_id);
+        printf( "    update frequency: %ds\n    signal: %zu\n", delay, new_id);
 
-    if (button_command) {
-        printf("    button handler: %s\n", button_command);
-    }
     printf("\n");
 
     struct Block block = {
-        .command = strdup(command),
-        .button_command = button_command ? strdup(button_command) : NULL,
+        .command = block_command_owned,
+        .button_command = button_command_owned,
         .delay = delay,
         .id = new_id};
 
@@ -660,12 +674,14 @@ int button_handler() {
 
         switch (fork()) {
             // child process
-            case 0:
-                printf("> %s %s %s\n", block->button_command, button_str, id_str);
-                execlp(
-                    block->button_command, block->button_command, button_str, id_str, (char*) NULL);
+            case 0: {
+                char* pathname = block->button_command;
+                char* program_name = basename(block->button_command);
+                printf("> %s %s %s %s\n", pathname, program_name, button_str, id_str);
+                execlp(pathname, program_name, button_str, id_str, (char*) NULL);
                 printf("failed\n");
                 break;
+            }
             // parent process
             default:
                 wait(NULL);

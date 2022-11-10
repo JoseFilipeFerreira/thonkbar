@@ -54,7 +54,8 @@ To create a block you just need to add a line in one of the following formats:
 Where:
 #### \<command\>
 
-Is a command in the PATH that outputs a suported block format.
+Can be either a command in the `PATH` or a command in
+`~/.config/thonkbar/scripts` (when prepended with `scripts/` that outputs a suported block format.
 
 Commands used can output up to 3 lines:
  - text on the block
