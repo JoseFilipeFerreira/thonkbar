@@ -23,27 +23,21 @@
 int LEMONBAR_PIPE_STDIN[2];
 int LEMONBAR_PIPE_STDOUT[2];
 
-int trim(char* org, char* dest, char surround_char) {
-    int r = 0;
-    size_t beg = 0;
-    size_t size_org = strlen(org);
-    if (size_org == 0) {
-        dest = NULL;
-        return 0;
+char* trim(char* str, char surround_char) {
+    size_t size_str = strlen(str);
+
+    while (isspace(str[size_str - 1]) || str[size_str - 1] == surround_char) {
+        str[size_str-- - 1] = '\0';
+        if (size_str < 1) return NULL;
     }
-    size_t end = size_org - 1;
-    while (isspace(org[beg])) beg++;
-    if (surround_char && org[beg] == surround_char) {
-        r = 1;
-        beg++;
+
+    while (isspace(*str) || *str == surround_char) {
+        str++;
+        size_str--;
+        if (size_str < 1) return NULL;
     }
-    while (isspace(org[end])) end--;
-    if (surround_char && org[end] == surround_char) {
-        r = 1;
-        end--;
-    }
-    strncpy(dest, org + beg, end - beg + 1);
-    return r;
+
+    return str;
 }
 
 struct Block {
@@ -54,6 +48,7 @@ struct Block {
     char* text_color;
     char* underline_color;
     int delay;
+    int essential;
     size_t id;
 };
 
@@ -86,6 +81,7 @@ void insert(struct Block_Array* blocks, struct Block* block) {
 enum BAR_MODE { left, right, center, config };
 
 struct {
+    int display_all;
     struct Block_Array right;
     struct Block_Array center;
     struct Block_Array left;
@@ -173,6 +169,11 @@ int draw_side(
 
         pthread_mutex_lock(&block.lock);
 
+        if (!(BAR_STATE.display_all || block.essential)) {
+            pthread_mutex_unlock(&block.lock);
+            continue;
+        }
+
         if (block.text && strlen(block.text) > 0) {
 
             if (block.button_command) {
@@ -210,7 +211,7 @@ int draw_side(
             print_delimiter = 0;
         }
 
-        pthread_mutex_unlock(&blocks.array[i].lock);
+        pthread_mutex_unlock(&block.lock);
 
         if (i < blocks.n_blocks - 1 && print_delimiter) {
             size += sprintf(
@@ -381,7 +382,7 @@ void run_blocks() {
     pthread_attr_destroy(&at);
 }
 
-char* parsed_dir(char* dir){
+char* parsed_dir(char* dir) {
     char* parsed_dir = NULL;
 
     if (strstr(dir, "scripts/") == dir) {
@@ -404,18 +405,17 @@ void insert_block(enum BAR_MODE bar_mode, char* block_command, char* button_comm
     printf("script: %s\n", block_command_owned);
 
     char* button_command_owned = NULL;
-    if (button_command){
+    if (button_command) {
         button_command_owned = parsed_dir(button_command);
         printf("    button handler: %s\n", button_command_owned);
     }
-
 
     if (delay == CONTINUOUS)
         printf("    CONTINUOUS\n");
     else if (delay == ONCE)
         printf("    signal: %zu\n", new_id);
     else
-        printf( "    update frequency: %ds\n    signal: %zu\n", delay, new_id);
+        printf("    update frequency: %ds\n    signal: %zu\n", delay, new_id);
 
     printf("\n");
 
@@ -423,11 +423,52 @@ void insert_block(enum BAR_MODE bar_mode, char* block_command, char* button_comm
         .command = block_command_owned,
         .button_command = button_command_owned,
         .delay = delay,
+        .essential = 1,
         .id = new_id};
 
     pthread_mutex_init(&block.lock, NULL);
 
     insert(get_block_array(bar_mode), &block);
+}
+
+struct Parsed_Fields {
+    char** beg_fields;
+    char** fields;
+    size_t n_fields;
+};
+
+void destroy_parsed_fields(struct Parsed_Fields* pf) {
+    if (!pf) return;
+
+    for (size_t i = 0; i < pf->n_fields; i++) {
+        free(pf->beg_fields[i]);
+    }
+    free(pf->beg_fields);
+    free(pf->fields);
+    free(pf);
+}
+
+struct Parsed_Fields* parse_delimiters(char* str, char* delimiter) {
+    struct Parsed_Fields* pf = malloc(sizeof(struct Parsed_Fields));
+    pf->beg_fields = calloc(10, sizeof(char*));
+    pf->fields = calloc(10, sizeof(char*));
+    pf->n_fields = 0;
+
+    char* internal_str = strdup(str);
+    char* begin_internal_str = internal_str;
+    char* ptr = strtok(internal_str, delimiter);
+
+    while (ptr != NULL) {
+        char* dupped = strdup(ptr);
+        pf->beg_fields[pf->n_fields] = dupped;
+        pf->fields[pf->n_fields] = trim(dupped, '"');
+        pf->n_fields++;
+        ptr = strtok(NULL, delimiter);
+    }
+
+    free(begin_internal_str);
+
+    return pf;
 }
 
 int parse_config(char* config_file) {
@@ -471,8 +512,9 @@ int parse_config(char* config_file) {
             return 0;
 
         } else if (bar_mode == config) {
-            char k[128], v[128];
-            if (sscanf(line, "%127[^=]=%127[^\n]%*c", k, v) != 2) {
+            struct Parsed_Fields* pf = parse_delimiters(line, ",");
+
+            if (pf->n_fields != 2) {
                 fprintf(
                     stderr,
                     "config:%zu: \033[31merror:\033[0m invalid config line format\n"
@@ -482,9 +524,8 @@ int parse_config(char* config_file) {
                     n_lines);
                 return 0;
             }
-            char key[128] = {0}, value[128] = {0};
-            trim(k, key, '"');
-            trim(v, value, '"');
+            char* key = pf->fields[0];
+            char* value = pf->fields[1];
 
             if (strstr(key, "delimiter_color") != NULL) {
                 BAR_CONFIG.delimiter_color = strdup(value);
@@ -584,11 +625,13 @@ int parse_config(char* config_file) {
                     n_lines);
                 return 0;
             }
+            destroy_parsed_fields(pf);
         } else {
-            char c[128] = {0}, t[128] = {0}, b[128] = {0};
+            struct Parsed_Fields* pf = parse_delimiters(line, ",");
 
-            if (sscanf(line, "%127[^,],%127[^,],%127[^\n]%*c", c, t, b) == 3) {
-            } else if (sscanf(line, "%127[^,],%127[^\n]%*c", c, t) != 2) {
+            printf("%zu\n", pf->n_fields);
+
+            if (pf->n_fields != 3 && pf->n_fields != 2) {
                 fprintf(
                     stderr,
                     "config:%zu: \033[31merror:\033[0m invalid block line format\n"
@@ -599,10 +642,9 @@ int parse_config(char* config_file) {
                 return 0;
             }
 
-            char command[128] = {0}, time[128] = {0}, button[128] = {0};
-            trim(c, command, '"');
-            trim(t, time, '"');
-            trim(b, button, '"');
+            char* command = pf->fields[0];
+            char* time = pf->fields[1];
+            char* button = pf->fields[2];
 
             int update_time;
             if (strstr(time, "ONCE") != NULL) {
@@ -620,7 +662,9 @@ int parse_config(char* config_file) {
                     return 0;
                 }
             }
-            insert_block(bar_mode, command, strlen(button) > 0 ? button : NULL, update_time);
+            insert_block(bar_mode, command, button, update_time);
+
+            destroy_parsed_fields(pf);
         }
     }
 
@@ -765,9 +809,17 @@ void exit_handler(int signal) {
     exit(0);
 }
 
+void toggle_bar_drawing(int signal) {
+    BAR_STATE.display_all = !BAR_STATE.display_all;
+    printf("draw all: %d\n", BAR_STATE.display_all);
+    draw_bar();
+}
+
 int main(void) {
     signal(SIGTERM, exit_handler);
+    signal(SIGUSR2, toggle_bar_drawing);
 
+    BAR_STATE.display_all = 1;
     BAR_STATE.left = make(10);
     BAR_STATE.center = make(10);
     BAR_STATE.right = make(10);
