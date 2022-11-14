@@ -23,15 +23,31 @@
 int LEMONBAR_PIPE_STDIN[2];
 int LEMONBAR_PIPE_STDOUT[2];
 
+const char* HOME(){
+    const char* HOME = getenv("HOME");
+    if (!HOME) HOME = getpwuid(getuid())->pw_dir;
+    return HOME;
+}
+
 char* trim(char* str, char surround_char) {
     size_t size_str = strlen(str);
 
-    while (isspace(str[size_str - 1]) || str[size_str - 1] == surround_char) {
+    while (isspace(str[size_str - 1])) {
         str[size_str-- - 1] = '\0';
         if (size_str < 1) return NULL;
     }
 
-    while (isspace(*str) || *str == surround_char) {
+    if(str[size_str - 1] == surround_char){
+        str[size_str-- - 1] = '\0';
+        if (size_str < 1) return NULL;
+    }
+
+    while (isspace(*str)) {
+        str++;
+        size_str--;
+        if (size_str < 1) return NULL;
+    }
+    if(*str == surround_char) {
         str++;
         size_str--;
         if (size_str < 1) return NULL;
@@ -386,7 +402,7 @@ char* parsed_dir(char* dir) {
     char* parsed_dir = NULL;
 
     if (strstr(dir, "scripts/") == dir) {
-        asprintf(&parsed_dir, "%s/.config/thonkbar/%s", getpwuid(getuid())->pw_dir, dir);
+        asprintf(&parsed_dir, "%s/.config/thonkbar/%s", HOME(), dir);
     } else {
         parsed_dir = strdup(dir);
     }
@@ -582,7 +598,7 @@ int parse_config(char* config_file) {
                         n_lines);
                     return 0;
                 }
-                BAR_CONFIG.underline_width = strdup(value);
+                BAR_CONFIG.text_offset = strdup(value);
 
             } else if (strstr(key, "underline_width") != NULL) {
                 long lvalue = strtol(value, NULL, 10);
@@ -824,11 +840,8 @@ int main(void) {
     BAR_STATE.center = make(10);
     BAR_STATE.right = make(10);
 
-    const char* HOME = getenv("HOME");
-    if (!HOME) HOME = getpwuid(getuid())->pw_dir;
-
     char* config_file;
-    asprintf(&config_file, "%s/.config/thonkbar/config", HOME);
+    asprintf(&config_file, "%s/.config/thonkbar/config", HOME());
 
     if (!parse_config(config_file)) return 1;
 
