@@ -20,6 +20,8 @@
 #define BUFF_SIZE 1024
 #define MAX_FONTS 5
 
+#define ERROR(STR, ...) fprintf(stderr, "\034[31merror:\033[0m "#STR, __VA_ARGS__);
+
 int LEMONBAR_PIPE_STDIN[2];
 int LEMONBAR_PIPE_STDOUT[2];
 
@@ -261,7 +263,7 @@ void update_block(struct Block* block) {
     FILE* fp = popen(block->command, "r");
 
     if (fp == NULL) {
-        fprintf(stderr, "Failed to run command: %s\n", block->command);
+        ERROR("Failed to run command: %s\n", block->command);
         return;
     }
 
@@ -331,7 +333,7 @@ void* update_continuous_thread(void* signalid) {
     FILE* fp = popen(block->command, "r");
 
     if (fp == NULL) {
-        fprintf(stderr, "Failed to run command: %s\n", block->command);
+        ERROR("Failed to run command: %s\n", block->command);
         return NULL;
     }
 
@@ -370,9 +372,8 @@ void run_block(struct Block* block, const pthread_attr_t* attr) {
     }
 
     if (rc) {
-        fprintf(
-            stderr,
-            "\033[31merror:\033[0m Could not create pthread\n"
+        ERROR(
+            "Could not create pthread\n"
             "return code from pthread_create(): %d\n",
             rc);
     }
@@ -491,7 +492,7 @@ int parse_config(char* config_file) {
     FILE* f = fopen(config_file, "r");
 
     if (!f) {
-        fprintf(stderr, "%s: \033[31merror:\033[0m Could not open config file\n", config_file);
+        ERROR("Could not open config file: %s\n", config_file);
         return 0;
     }
 
@@ -515,25 +516,23 @@ int parse_config(char* config_file) {
             } else if (strcmp("[center]\n", line) == 0) {
                 bar_mode = center;
             } else {
-                fprintf(
-                    stderr,
-                    "config:%zu: \033[31merror:\033[0m invalid config section\n"
+                ERROR(
+                    "config:%zu: invalid config section\n"
                     "Can only be left, right, center or config\n",
                     n_lines);
                 return 0;
             }
 
         } else if (bar_mode == (enum BAR_MODE) - 1) {
-            fprintf(stderr, "config:%zu: \033[31merror:\033[0m section must be defined\n", n_lines);
+            ERROR("config:%zu: section must be defined\n", n_lines);
             return 0;
 
         } else if (bar_mode == config) {
             struct Parsed_Fields* pf = parse_delimiters(line, ",");
 
             if (pf->n_fields != 2) {
-                fprintf(
-                    stderr,
-                    "config:%zu: \033[31merror:\033[0m invalid config line format\n"
+                ERROR(
+                    "config:%zu: invalid config line format\n"
                     "    Must be in the format:\n"
                     "        <property> = \"<string>\"\n"
                     "        <property> = <integer>\n",
@@ -549,9 +548,8 @@ int parse_config(char* config_file) {
                 BAR_CONFIG.delimiter = strdup(value);
             } else if (strstr(key, "font") != NULL) {
                 if (BAR_CONFIG.n_fonts > 4) {
-                    fprintf(
-                        stderr,
-                        "config:%zu: \033[31merror:\033[0m too many diferent fonts\n"
+                    ERROR(
+                        "config:%zu: too many diferent fonts\n"
                         "    Must be less than %d:\n",
                         n_lines,
                         MAX_FONTS);
@@ -568,9 +566,8 @@ int parse_config(char* config_file) {
                 } else if (strstr(value, "bottom") != NULL) {
                     BAR_CONFIG.bar_position = bottom;
                 } else {
-                    fprintf(
-                        stderr,
-                        "config:%zu: \033[31merror:\033[0m invalid bar position\n"
+                    ERROR(
+                        "config:%zu: invalid bar position\n"
                         "Can only be top or bottom\n",
                         n_lines);
                     return 0;
@@ -581,9 +578,8 @@ int parse_config(char* config_file) {
                 } else if (strstr(value, "force") != NULL) {
                     BAR_CONFIG.docking_mode = force;
                 } else {
-                    fprintf(
-                        stderr,
-                        "config:%zu: \033[31merror:\033[0m invalid docking mode\n"
+                    ERROR(
+                        "config:%zu: invalid docking mode\n"
                         "Can only be normal or force\n",
                         n_lines);
                     return 0;
@@ -591,9 +587,8 @@ int parse_config(char* config_file) {
             } else if (strstr(key, "text_offset") != NULL) {
                 strtol(value, NULL, 10);
                 if (errno == EINVAL) {
-                    fprintf(
-                        stderr,
-                        "config:%zu: \033[31merror:\033[0m invalid text offset\n"
+                    ERROR(
+                        "config:%zu: invalid text offset\n"
                         "Can only be an integer\n",
                         n_lines);
                     return 0;
@@ -603,9 +598,8 @@ int parse_config(char* config_file) {
             } else if (strstr(key, "underline_width") != NULL) {
                 long lvalue = strtol(value, NULL, 10);
                 if (errno == EINVAL || lvalue < 0) {
-                    fprintf(
-                        stderr,
-                        "config:%zu: \033[31merror:\033[0m invalid underline width\n"
+                    ERROR(
+                        "config:%zu: invalid underline width\n"
                         "Can only be an integer greater than 0\n",
                         n_lines);
                     return 0;
@@ -615,9 +609,8 @@ int parse_config(char* config_file) {
             } else if (strstr(key, "left_padding") != NULL) {
                 long lvalue = strtol(value, NULL, 10);
                 if (errno == EINVAL || lvalue < 0) {
-                    fprintf(
-                        stderr,
-                        "config:%zu: \033[31merror:\033[0m invalid left_padding\n"
+                    ERROR(
+                        "config:%zu: invalid left_padding\n"
                         "Can only be an integer greater than 0\n",
                         n_lines);
                     return 0;
@@ -626,18 +619,16 @@ int parse_config(char* config_file) {
             } else if (strstr(key, "right_padding") != NULL) {
                 long lvalue = strtol(value, NULL, 10);
                 if (errno == EINVAL || lvalue < 0) {
-                    fprintf(
-                        stderr,
-                        "config:%zu: \033[31merror:\033[0m invalid right_padding\n"
+                    ERROR(
+                        "config:%zu: invalid right_padding\n"
                         "Can only be an integer greater than 0\n",
                         n_lines);
                     return 0;
                 }
                 BAR_CONFIG.right_padding = lvalue;
             } else {
-                fprintf(
-                    stderr,
-                    "config:%zu: \033[31merror:\033[0m invalid bar configuration option\n",
+                ERROR(
+                    "config:%zu: invalid bar configuration option\n",
                     n_lines);
                 return 0;
             }
@@ -645,12 +636,9 @@ int parse_config(char* config_file) {
         } else {
             struct Parsed_Fields* pf = parse_delimiters(line, ",");
 
-            printf("%zu\n", pf->n_fields);
-
             if (pf->n_fields != 3 && pf->n_fields != 2) {
-                fprintf(
-                    stderr,
-                    "config:%zu: \033[31merror:\033[0m invalid block line format\n"
+                ERROR(
+                    "config:%zu: invalid block line format\n"
                     "Must be in the format:"
                     "    <command>, <duration>\n"
                     "    <command>, <duration>, <button handler script>\n",
@@ -670,9 +658,8 @@ int parse_config(char* config_file) {
             } else {
                 update_time = strtol(time, NULL, 10);
                 if (errno == EINVAL || update_time <= 0) {
-                    fprintf(
-                        stderr,
-                        "config:%zu: \033[31merror:\033[0m invalid block update time\n"
+                    ERROR(
+                        "config:%zu:  invalid block update time\n"
                         "Can only be ONCE, CONTINUOUS or an int greater than 0\n",
                         n_lines);
                     return 0;
@@ -719,13 +706,13 @@ int button_handler() {
         }
 
         if (!button_str) {
-            printf("> invalid button id: %s\n", line);
+            ERROR("invalid button id: %s\n", line);
             continue;
         }
 
         struct Block* block = get_block(block_id);
         if (!block) {
-            printf("> invalid block id: %s\n", line);
+            ERROR("invalid block id: %s\n", line);
             continue;
         }
 
@@ -739,7 +726,7 @@ int button_handler() {
                 char* program_name = basename(block->button_command);
                 printf("> %s %s %s %s\n", pathname, program_name, button_str, id_str);
                 execlp(pathname, program_name, button_str, id_str, (char*) NULL);
-                printf("failed\n");
+                ERROR("failed to run command: %d\n", errno);
                 break;
             }
             // parent process
@@ -808,6 +795,7 @@ int fork_lemonbar() {
             close(LEMONBAR_PIPE_STDOUT[1]);
 
             execvp("lemonbar", argv);
+            ERROR("failed to run lemonbar: %d\n", errno);
             break;
         // parent process
         default: {
