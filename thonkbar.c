@@ -4,28 +4,27 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <iniparser.h>
 #include <pthread.h>
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 #define CONTINUOUS -1
 #define ONCE 0
 
 #define BUFF_SIZE 1024
-#define MAX_FONTS 5
 
-#define ERROR(STR, ...) fprintf(stderr, "\034[31merror:\033[0m "#STR, __VA_ARGS__);
+#define ERROR(STR) fprintf(stderr, "\034[31merror:\033[0m " #STR);
+#define ERROR_FMT(STR, ...) fprintf(stderr, "\034[31merror:\033[0m " #STR, __VA_ARGS__);
 
 int LEMONBAR_PIPE_STDIN[2];
 int LEMONBAR_PIPE_STDOUT[2];
 
-const char* HOME(){
+const char* HOME() {
     const char* HOME = getenv("HOME");
     if (!HOME) HOME = getpwuid(getuid())->pw_dir;
     return HOME;
@@ -39,7 +38,7 @@ char* trim(char* str, char surround_char) {
         if (size_str < 1) return NULL;
     }
 
-    if(str[size_str - 1] == surround_char){
+    if (str[size_str - 1] == surround_char) {
         str[size_str-- - 1] = '\0';
         if (size_str < 1) return NULL;
     }
@@ -49,7 +48,7 @@ char* trim(char* str, char surround_char) {
         size_str--;
         if (size_str < 1) return NULL;
     }
-    if(*str == surround_char) {
+    if (*str == surround_char) {
         str++;
         size_str--;
         if (size_str < 1) return NULL;
@@ -96,7 +95,7 @@ void insert(struct Block_Array* blocks, struct Block* block) {
     blocks->n_blocks++;
 }
 
-enum BAR_MODE { left, right, center, config };
+enum BAR_MODE { left, right, center };
 
 struct {
     int display_all;
@@ -124,8 +123,7 @@ enum DOCKING_MODE { normal, force };
 struct Config {
     char* delimiter;
     char* delimiter_color;
-    size_t n_fonts;
-    char* fonts[MAX_FONTS];
+    char* font;
     char* underline_width;
     char* background_color;
     char* foreground_color;
@@ -136,19 +134,7 @@ struct Config {
     enum DOCKING_MODE docking_mode;
 };
 
-struct Config BAR_CONFIG = {
-    .delimiter = " | ",
-    .delimiter_color = "#FFFFFF",
-    .n_fonts = 0,
-    .fonts = {NULL, NULL, NULL, NULL, NULL},
-    .underline_width = "2",
-    .background_color = NULL,
-    .foreground_color = NULL,
-    .text_offset = NULL,
-    .right_padding = 0,
-    .left_padding = 0,
-    .bar_position = top,
-    .docking_mode = normal};
+struct Config BAR_CONFIG;
 
 struct Block* get_block(size_t signal_id) {
     for (size_t i = 0; i < BAR_STATE.right.n_blocks; i++) {
@@ -263,7 +249,7 @@ void update_block(struct Block* block) {
     FILE* fp = popen(block->command, "r");
 
     if (fp == NULL) {
-        ERROR("Failed to run command: %s\n", block->command);
+        ERROR_FMT("Failed to run command: %s\n", block->command);
         return;
     }
 
@@ -333,7 +319,7 @@ void* update_continuous_thread(void* signalid) {
     FILE* fp = popen(block->command, "r");
 
     if (fp == NULL) {
-        ERROR("Failed to run command: %s\n", block->command);
+        ERROR_FMT("Failed to run command: %s\n", block->command);
         return NULL;
     }
 
@@ -372,7 +358,7 @@ void run_block(struct Block* block, const pthread_attr_t* attr) {
     }
 
     if (rc) {
-        ERROR(
+        ERROR_FMT(
             "Could not create pthread\n"
             "return code from pthread_create(): %d\n",
             rc);
@@ -399,7 +385,7 @@ void run_blocks() {
     pthread_attr_destroy(&at);
 }
 
-char* parsed_dir(char* dir) {
+char* parsed_dir(const char* dir) {
     char* parsed_dir = NULL;
 
     if (strstr(dir, "scripts/") == dir) {
@@ -411,7 +397,7 @@ char* parsed_dir(char* dir) {
     return parsed_dir;
 }
 
-void insert_block(enum BAR_MODE bar_mode, char* block_command, char* button_command, int delay) {
+void insert_block(enum BAR_MODE bar_mode, const char* block_command, const char* button_command, int delay) {
     static size_t last_id_right = 34;
     static size_t last_id_other = 64;
 
@@ -448,230 +434,118 @@ void insert_block(enum BAR_MODE bar_mode, char* block_command, char* button_comm
     insert(get_block_array(bar_mode), &block);
 }
 
-struct Parsed_Fields {
-    char** beg_fields;
-    char** fields;
-    size_t n_fields;
-};
 
-void destroy_parsed_fields(struct Parsed_Fields* pf) {
-    if (!pf) return;
 
-    for (size_t i = 0; i < pf->n_fields; i++) {
-        free(pf->beg_fields[i]);
-    }
-    free(pf->beg_fields);
-    free(pf->fields);
-    free(pf);
+char* safe_strdup(const char* str) {
+    return str ? strdup(str) : NULL;
 }
 
-struct Parsed_Fields* parse_delimiters(char* str, char* delimiter) {
-    struct Parsed_Fields* pf = malloc(sizeof(struct Parsed_Fields));
-    pf->beg_fields = calloc(10, sizeof(char*));
-    pf->fields = calloc(10, sizeof(char*));
-    pf->n_fields = 0;
-
-    char* internal_str = strdup(str);
-    char* begin_internal_str = internal_str;
-    char* ptr = strtok(internal_str, delimiter);
-
-    while (ptr != NULL) {
-        char* dupped = strdup(ptr);
-        pf->beg_fields[pf->n_fields] = dupped;
-        pf->fields[pf->n_fields] = trim(dupped, '"');
-        pf->n_fields++;
-        ptr = strtok(NULL, delimiter);
-    }
-
-    free(begin_internal_str);
-
-    return pf;
+const char* iniparser_getsecstring(const dictionary* d, const char* s, const char* key, char* def){
+    char * search;
+    asprintf(&search, "%s:%s", s, key);
+    const char* r = iniparser_getstring(d, search, def);
+    free(search);
+    return r;
 }
 
 int parse_config(char* config_file) {
-    FILE* f = fopen(config_file, "r");
 
-    if (!f) {
-        ERROR("Could not open config file: %s\n", config_file);
-        return 0;
+    dictionary* ini = iniparser_load(config_file);
+
+    if (!ini) {
+        ERROR_FMT("Could not open config file: %s\n", config_file);
     }
 
-    char line[BUFF_SIZE];
+    BAR_CONFIG.delimiter = safe_strdup(iniparser_getstring(ini, "config:delimiter", " | "));
+    BAR_CONFIG.delimiter_color =
+        safe_strdup(iniparser_getstring(ini, "config:delimiter_color", "#FFFFFF"));
+    BAR_CONFIG.font = safe_strdup(iniparser_getstring(ini, "config:font", NULL));
+    BAR_CONFIG.underline_width =
+        safe_strdup(iniparser_getstring(ini, "config:underline_width", "2"));
+    BAR_CONFIG.background_color =
+        safe_strdup(iniparser_getstring(ini, "config:background_color", NULL));
+    BAR_CONFIG.foreground_color =
+        safe_strdup(iniparser_getstring(ini, "config:foreground_color", NULL));
+    BAR_CONFIG.text_offset = safe_strdup(iniparser_getstring(ini, "config:text_offset", NULL));
+    BAR_CONFIG.right_padding = iniparser_getint(ini, "config:right_padding", 0);
+    BAR_CONFIG.left_padding = iniparser_getint(ini, "config:left_padding", 0);
 
-    enum BAR_MODE bar_mode = -1;
+    const char* bar_position = iniparser_getstring(ini, "config:bar_position", "top");
 
-    for (size_t n_lines = 1; fgets(line, sizeof(line), f); n_lines++) {
+    if (bar_position) {
+        if (strstr(bar_position, "top") != NULL) {
+            BAR_CONFIG.bar_position = top;
+        } else if (strstr(bar_position, "bottom") != NULL) {
+            BAR_CONFIG.bar_position = bottom;
+        } else {
+            ERROR("config: invalid field: config:bar_position\n"
+                  "Can only be top or bottom\n")
+            return 0;
+        }
+    }
 
-        if (line[0] == '#' || line[0] == '\n') {
+    const char* docking_mode = iniparser_getstring(ini, "config:docking_mode", "normal");
+
+    if (docking_mode) {
+        if (strstr(docking_mode, "normal") != NULL) {
+            BAR_CONFIG.docking_mode = normal;
+        } else if (strstr(docking_mode, "force") != NULL) {
+            BAR_CONFIG.docking_mode = force;
+        } else {
+            ERROR("config: invalid field: config:docking_mode\n"
+                  "Can only be normal or force\n");
+            return 0;
+        }
+    }
+
+    for (int i = 0; i < iniparser_getnsec(ini); i++) {
+        char const* section_name = iniparser_getsecname(ini, i);
+
+        if (strstr(section_name, "config") != NULL) {
             continue;
         }
 
-        if (line[0] == '[' && line[strlen(line) - 2] == ']') {
-            if (strcmp("[config]\n", line) == 0) {
-                bar_mode = config;
-            } else if (strcmp("[left]\n", line) == 0) {
-                bar_mode = left;
-            } else if (strcmp("[right]\n", line) == 0) {
-                bar_mode = right;
-            } else if (strcmp("[center]\n", line) == 0) {
-                bar_mode = center;
-            } else {
-                ERROR(
-                    "config:%zu: invalid config section\n"
-                    "Can only be left, right, center or config\n",
-                    n_lines);
-                return 0;
-            }
 
-        } else if (bar_mode == (enum BAR_MODE) - 1) {
-            ERROR("config:%zu: section must be defined\n", n_lines);
-            return 0;
-
-        } else if (bar_mode == config) {
-            struct Parsed_Fields* pf = parse_delimiters(line, ",");
-
-            if (pf->n_fields != 2) {
-                ERROR(
-                    "config:%zu: invalid config line format\n"
-                    "    Must be in the format:\n"
-                    "        <property> = \"<string>\"\n"
-                    "        <property> = <integer>\n",
-                    n_lines);
-                return 0;
-            }
-            char* key = pf->fields[0];
-            char* value = pf->fields[1];
-
-            if (strstr(key, "delimiter_color") != NULL) {
-                BAR_CONFIG.delimiter_color = strdup(value);
-            } else if (strstr(key, "delimiter") != NULL) {
-                BAR_CONFIG.delimiter = strdup(value);
-            } else if (strstr(key, "font") != NULL) {
-                if (BAR_CONFIG.n_fonts > 4) {
-                    ERROR(
-                        "config:%zu: too many diferent fonts\n"
-                        "    Must be less than %d:\n",
-                        n_lines,
-                        MAX_FONTS);
-                    return 0;
-                }
-                BAR_CONFIG.fonts[BAR_CONFIG.n_fonts++] = strdup(value);
-            } else if (strstr(key, "background_color") != NULL) {
-                BAR_CONFIG.background_color = strdup(value);
-            } else if (strstr(key, "foreground_color") != NULL) {
-                BAR_CONFIG.foreground_color = strdup(value);
-            } else if (strstr(key, "position") != NULL) {
-                if (strstr(value, "top") != NULL) {
-                    BAR_CONFIG.bar_position = top;
-                } else if (strstr(value, "bottom") != NULL) {
-                    BAR_CONFIG.bar_position = bottom;
-                } else {
-                    ERROR(
-                        "config:%zu: invalid bar position\n"
-                        "Can only be top or bottom\n",
-                        n_lines);
-                    return 0;
-                }
-            } else if (strstr(key, "docking_mode") != NULL) {
-                if (strstr(value, "normal") != NULL) {
-                    BAR_CONFIG.docking_mode = normal;
-                } else if (strstr(value, "force") != NULL) {
-                    BAR_CONFIG.docking_mode = force;
-                } else {
-                    ERROR(
-                        "config:%zu: invalid docking mode\n"
-                        "Can only be normal or force\n",
-                        n_lines);
-                    return 0;
-                }
-            } else if (strstr(key, "text_offset") != NULL) {
-                strtol(value, NULL, 10);
-                if (errno == EINVAL) {
-                    ERROR(
-                        "config:%zu: invalid text offset\n"
-                        "Can only be an integer\n",
-                        n_lines);
-                    return 0;
-                }
-                BAR_CONFIG.text_offset = strdup(value);
-
-            } else if (strstr(key, "underline_width") != NULL) {
-                long lvalue = strtol(value, NULL, 10);
-                if (errno == EINVAL || lvalue < 0) {
-                    ERROR(
-                        "config:%zu: invalid underline width\n"
-                        "Can only be an integer greater than 0\n",
-                        n_lines);
-                    return 0;
-                }
-                BAR_CONFIG.underline_width = strdup(value);
-
-            } else if (strstr(key, "left_padding") != NULL) {
-                long lvalue = strtol(value, NULL, 10);
-                if (errno == EINVAL || lvalue < 0) {
-                    ERROR(
-                        "config:%zu: invalid left_padding\n"
-                        "Can only be an integer greater than 0\n",
-                        n_lines);
-                    return 0;
-                }
-                BAR_CONFIG.left_padding = lvalue;
-            } else if (strstr(key, "right_padding") != NULL) {
-                long lvalue = strtol(value, NULL, 10);
-                if (errno == EINVAL || lvalue < 0) {
-                    ERROR(
-                        "config:%zu: invalid right_padding\n"
-                        "Can only be an integer greater than 0\n",
-                        n_lines);
-                    return 0;
-                }
-                BAR_CONFIG.right_padding = lvalue;
-            } else {
-                ERROR(
-                    "config:%zu: invalid bar configuration option\n",
-                    n_lines);
-                return 0;
-            }
-            destroy_parsed_fields(pf);
+        const char* side = iniparser_getsecstring(ini, section_name, "side", NULL);
+        enum BAR_MODE bar_mode;
+        if (strcmp("left", side) == 0) {
+            bar_mode = left;
+        } else if (strcmp("right", side) == 0) {
+            bar_mode = right;
+        } else if (strcmp("center", side) == 0) {
+            bar_mode = center;
         } else {
-            struct Parsed_Fields* pf = parse_delimiters(line, ",");
+            ERROR_FMT(
+                "config: invalid field: %s:side\n"
+                "Can only be left, right, center or config\n",
+                section_name);
+            return 0;
+        }
+        const char* cmd = iniparser_getsecstring(ini, section_name, "cmd", NULL);
+        const char* update = iniparser_getsecstring(ini, section_name, "update", NULL);
 
-            if (pf->n_fields != 3 && pf->n_fields != 2) {
-                ERROR(
-                    "config:%zu: invalid block line format\n"
-                    "Must be in the format:"
-                    "    <command>, <duration>\n"
-                    "    <command>, <duration>, <button handler script>\n",
-                    n_lines);
+        int update_time;
+        if (strstr(update, "ONCE") != NULL) {
+            update_time = ONCE;
+        } else if (strstr(update, "CONTINUOUS") != NULL) {
+            update_time = CONTINUOUS;
+        } else {
+            update_time = strtol(update, NULL, 10);
+            if (errno == EINVAL || update_time <= 0) {
+                ERROR_FMT(
+                    "config:  invalid field: %s:update\n"
+                    "Can only be ONCE, CONTINUOUS or an int greater than 0\n",
+                    section_name);
                 return 0;
             }
-
-            char* command = pf->fields[0];
-            char* time = pf->fields[1];
-            char* button = pf->fields[2];
-
-            int update_time;
-            if (strstr(time, "ONCE") != NULL) {
-                update_time = ONCE;
-            } else if (strstr(time, "CONTINUOUS") != NULL) {
-                update_time = CONTINUOUS;
-            } else {
-                update_time = strtol(time, NULL, 10);
-                if (errno == EINVAL || update_time <= 0) {
-                    ERROR(
-                        "config:%zu:  invalid block update time\n"
-                        "Can only be ONCE, CONTINUOUS or an int greater than 0\n",
-                        n_lines);
-                    return 0;
-                }
-            }
-            insert_block(bar_mode, command, button, update_time);
-
-            destroy_parsed_fields(pf);
         }
+
+        const char* event = iniparser_getsecstring(ini, section_name, "event", NULL);
+
+        insert_block(bar_mode, cmd, event, update_time);
     }
 
-    fclose(f);
+    iniparser_freedict(ini);
 
     return 1;
 }
@@ -706,13 +580,13 @@ int button_handler() {
         }
 
         if (!button_str) {
-            ERROR("invalid button id: %s\n", line);
+            ERROR_FMT("invalid button id: %s\n", line);
             continue;
         }
 
         struct Block* block = get_block(block_id);
         if (!block) {
-            ERROR("invalid block id: %s\n", line);
+            ERROR_FMT("invalid block id: %s\n", line);
             continue;
         }
 
@@ -726,7 +600,7 @@ int button_handler() {
                 char* program_name = basename(block->button_command);
                 printf("> %s %s %s %s\n", pathname, program_name, button_str, id_str);
                 execlp(pathname, program_name, button_str, id_str, (char*) NULL);
-                ERROR("failed to run command: %d\n", errno);
+                ERROR_FMT("failed to run command: %d\n", errno);
                 break;
             }
             // parent process
@@ -760,9 +634,9 @@ int fork_lemonbar() {
         (BAR_STATE.left.n_blocks + BAR_STATE.right.n_blocks + BAR_STATE.center.n_blocks) * 5);
     *iter++ = max_clickable;
 
-    for (size_t i = 0; i < BAR_CONFIG.n_fonts; i++) {
+    if (BAR_CONFIG.font) {
         *iter++ = "-f";
-        *iter++ = BAR_CONFIG.fonts[i];
+        *iter++ = BAR_CONFIG.font;
     };
     if (BAR_CONFIG.background_color) {
         *iter++ = "-B";
@@ -795,7 +669,7 @@ int fork_lemonbar() {
             close(LEMONBAR_PIPE_STDOUT[1]);
 
             execvp("lemonbar", argv);
-            ERROR("failed to run lemonbar: %d\n", errno);
+            ERROR_FMT("failed to run lemonbar: %d\n", errno);
             break;
         // parent process
         default: {
@@ -815,7 +689,7 @@ void exit_handler(int signal) {
 
 void toggle_bar_drawing(int signal) {
     BAR_STATE.display_all = !BAR_STATE.display_all;
-    printf("draw all: %d\n", BAR_STATE.display_all);
+    printf("draw all (%d): %d\n", signal, BAR_STATE.display_all);
     draw_bar();
 }
 
@@ -829,7 +703,7 @@ int main(void) {
     BAR_STATE.right = make(10);
 
     char* config_file;
-    asprintf(&config_file, "%s/.config/thonkbar/config", HOME());
+    asprintf(&config_file, "%s/.config/thonkbar/config.ini", HOME());
 
     if (!parse_config(config_file)) return 1;
 

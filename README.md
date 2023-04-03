@@ -14,14 +14,6 @@ make install
 
 The program reads a config file located at `~/.config/thonkbar/config`.
 
-There are four fields that can be defined in the config file
-
-| options   | result                              |
-| --------- | ----------------------------------- |
-| [config]  | general bar configs                 |
-| [left]    | blocks on the left side of the bar  |
-| [right]   | blocks on the right side of the bar |
-| [center]  | blocks on the center of the bar     |
 
 ### General Bar Configs
 
@@ -40,29 +32,30 @@ position = top|bottom
 docking_mode = normal|force
 ```
 
-`note:` to add fallback fonts just add more lines in the format above (up to a
-maximum of 5)
-
 ### 📡 Create and Update blocks
 
 To create a block you just need to add a line in one of the following formats:
 
+```ini
+[name]
+side = left|right|center
+cmd = <command>
+update = CONTINUOUS|ONCE|<integer>
+event = <command>
 ```
-<command>, <update>
-<command>, <update>, <button handler>
-```
+
 Where:
-#### \<command\>
+#### cmd
 
 Can be either a command in the `PATH` or a command in
-`~/.config/thonkbar/scripts` (when prepended with `scripts/` that outputs a suported block format.
+`~/.config/thonkbar/scripts` (when prepended with `scripts/`) that outputs a suported block format.
 
 Commands used can output up to 3 lines:
  - text on the block
  - text color (#RRGGBB)
  - underline color (#RRGGBB)
 
-#### \<update\>
+#### update
 
 Represents the script update kind/frequency. Can be any of the following:
 
@@ -77,7 +70,7 @@ Optionally a block can be updated via the corresponding signal via `pkill`.
 Usefull information for each block (including the bound signal) is outputed when
 the bar starts.
 
-#### \<button handler\>
+#### event
 Is a script that is called with the following arguments whenever a mouse click
 is registered on the bar.
 
@@ -102,11 +95,15 @@ where:
 delimiter = "  |  "
 delimiter_color = "#666666"
 
-[right]
-date '+%d/%m  %H:%M', 1
+[uptime]
+side = right
+cmd = "uptime -p"
+update = 60
 
-[left]
-scripts/workspaces, CONTINUOUS
+[workspaces]
+side = left
+cmd = "scripts/workspaces"
+update = CONTINUOUS
  ```
 
 * My personal [config](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/config)
