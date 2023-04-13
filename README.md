@@ -1,14 +1,23 @@
 # 🤔 Thonkbar
 
 minimalist block based lemonbar wrapper
+
+---
+
 ## :link: Instalation
 
-From the [AUR](https://aur.archlinux.org/packages/thonkbar-git/) or manualy
+From the [AUR](https://aur.archlinux.org/packages/thonkbar-git/):
+```bash
+aura -S thonkbar-git
+```
+or manualy
 with:
 
 ```bash
 make install
 ```
+
+---
 
 ## ⚙️ Configure
 
@@ -44,10 +53,9 @@ update = CONTINUOUS|ONCE|<integer>
 event = <command>
 ```
 
-Where:
-#### cmd
+#### \<command\>
 
-Can be either a command in the `PATH` or a command in
+Can be either a command in the `$PATH` or a command in
 `~/.config/thonkbar/scripts` (when prepended with `scripts/`) that outputs a suported block format.
 
 Commands used can output up to 3 lines:
@@ -78,10 +86,11 @@ is registered on the bar.
 <button handler> <button> <id>
 ```
 
-where:
  - `<button>` can be: `LEFT`, `CENTER`, `RIGHT`, `UP` or `DOWN`
  - `<id>` is the signal bound to the block (usefull for updating the block after
      handling the button press)
+
+---
 
 ## Examples
 
@@ -112,3 +121,7 @@ update = CONTINUOUS
   * Script for [wifi](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/wifi)
   * Script for [workspaces on i3](https://github.com/JoseFilipeFerreira/toolbelt/blob/master/powertools/thonkbar/scripts/workspaces).
 
+---
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
