@@ -14,7 +14,7 @@ $(EXEC): thonkbar.c
 	$(CC) thonkbar.c -O2 -o $(EXEC) $(CFLAGS)
 
 debug: thonkbar.c
-	$(CC) -g -DNDEBUG thonkbar.c -o $(EXEC) $(CFLAGS)
+	$(CC) -g -O0 -DNDEBUG thonkbar.c -o $(EXEC) $(CFLAGS)
 
 clean:
 	rm $(EXEC)
