@@ -199,12 +199,14 @@ typedef struct {
     Config* config;
 } Bar_State;
 
-void bar_state_destroy(Bar_State* bar_state) {
-    block_array_destroy(bar_state->left);
-    block_array_destroy(bar_state->right);
-    block_array_destroy(bar_state->center);
-    config_destroy(bar_state->config);
-    free(bar_state);
+void bar_state_destroy(Bar_State* bs) {
+    if (!bs) return;
+
+    block_array_destroy(bs->left);
+    block_array_destroy(bs->right);
+    block_array_destroy(bs->center);
+    config_destroy(bs->config);
+    free(bs);
 }
 
 Block_Array* bar_state_get_block_array(Bar_State* bs, enum BAR_AREA area) {
@@ -762,8 +764,9 @@ int main(void) {
     if (!config) return 1;
 
     g_bar_state = bar_state_load(ini, config);
-    iniparser_freedict(ini);
     if (!g_bar_state) return 1;
+
+    iniparser_freedict(ini);
 
     fork_lemonbar(g_bar_state);
     bar_state_run(g_bar_state);

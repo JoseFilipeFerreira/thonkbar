@@ -6,12 +6,11 @@ minimalist block based lemonbar wrapper
 
 ## :link: Instalation
 
-From the [AUR](https://aur.archlinux.org/packages/thonkbar-git/):
+From the [AUR](https://aur.archlinux.org/packages/thonkbar-git/) with:
 ```bash
 aura -S thonkbar-git
 ```
-or manualy
-with:
+or manualy with:
 
 ```bash
 make install
@@ -47,6 +46,7 @@ To create a block you just need to add a line in one of the following formats:
 
 ```ini
 [name]
+essential = True|False
 side = left|right|center
 cmd = <command>
 update = CONTINUOUS|ONCE|<integer>
@@ -57,6 +57,17 @@ event = <command>
 
 Can be either a command in the `$PATH` or a command in
 `~/.config/thonkbar/scripts` (when prepended with `scripts/`) that outputs a suported block format.
+
+#### essential
+
+Using the `SIGUSR2` a user can toggle the bar between showing all the blocks
+and showing only the blocks marked as essential. By default the blocks are
+marked as essential so this field can be omitted.
+
+#### cmd
+
+Can be either a command in the `PATH` or a command in
+`~/.config/thonkbar/scripts` (when prepended with `scripts/`) that outputs a supported block format.
 
 Commands used can output up to 3 lines:
  - text on the block
@@ -75,7 +86,7 @@ Represents the script update kind/frequency. Can be any of the following:
 
 Optionally a block can be updated via the corresponding signal via `pkill`.
 
-Usefull information for each block (including the bound signal) is outputed when
+Useful information for each block (including the bound signal) is outputted when
 the bar starts.
 
 #### event
@@ -87,7 +98,7 @@ is registered on the bar.
 ```
 
  - `<button>` can be: `LEFT`, `CENTER`, `RIGHT`, `UP` or `DOWN`
- - `<id>` is the signal bound to the block (usefull for updating the block after
+ - `<id>` is the signal bound to the block (useful for updating the block after
      handling the button press)
 
 ---
