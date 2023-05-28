@@ -132,6 +132,7 @@ Config* config_load(dictionary* ini) {
 
 typedef struct {
     pthread_mutex_t* lock;
+    char* name;
     char* command;
     char* button_command;
     char* text;
@@ -145,6 +146,7 @@ typedef struct {
 void block_destroy(Block* block) {
     pthread_mutex_destroy(block->lock);
 
+    safe_free(block->name);
     safe_free(block->command);
     safe_free(block->button_command);
     safe_free(block->text);
@@ -352,18 +354,16 @@ void block_update(Block* block) {
     char* text_color = NULL;
     char* text_underline = NULL;
 
-    size_t n_lines_read = 0;
-    while (fgets(line, BUFF_SIZE, fp) != NULL) {
-        n_lines_read++;
+    for (size_t n_lines_read = 0; fgets(line, BUFF_SIZE, fp) != NULL; n_lines_read++) {
         line[strlen(line) - 1] = '\0';
         switch (n_lines_read) {
-            case 1:
+            case 0:
                 text = strdup(line);
                 break;
-            case 2:
+            case 1:
                 text_color = strdup(line);
                 break;
-            case 3:
+            case 2:
                 text_underline = strdup(line);
                 break;
         }
@@ -498,6 +498,7 @@ char* parse_path(const char* dir) {
 void bar_state_insert_block(
     Bar_State* bs,
     enum BAR_AREA bar_mode,
+    const char* block_name,
     const char* block_command,
     const char* button_command,
     int delay,
@@ -529,6 +530,7 @@ void bar_state_insert_block(
 
     Block* block = calloc(1, sizeof(Block));
 
+    block->name = safe_strdup(block_name);
     block->command = block_command_full_path;
     block->button_command = button_command_full_path;
     block->delay = delay;
@@ -597,7 +599,7 @@ Bar_State* bar_state_load(dictionary* ini, Config* config) {
 
         int essential = iniparser_getsecboolean(ini, section_name, "essential", 1);
 
-        bar_state_insert_block(bs, bar_mode, cmd, event, update_time, essential);
+        bar_state_insert_block(bs, bar_mode, section_name, cmd, event, update_time, essential);
     }
 
     return bs;
