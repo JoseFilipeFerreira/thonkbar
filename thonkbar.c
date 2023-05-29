@@ -25,9 +25,9 @@ int LEMONBAR_PIPE_STDIN[2];
 int LEMONBAR_PIPE_STDOUT[2];
 
 const char* HOME() {
-    const char* HOME = getenv("HOME");
-    if (!HOME) HOME = getpwuid(getuid())->pw_dir;
-    return HOME;
+    const char* home = getenv("HOME");
+    if (!home) home = getpwuid(getuid())->pw_dir;
+    return home;
 }
 
 char* safe_strdup(const char* str) {
@@ -130,6 +130,8 @@ Config* config_load(dictionary* ini) {
     return config;
 }
 
+enum BAR_AREA { left, right, center };
+
 typedef struct {
     pthread_mutex_t* lock;
     char* name;
@@ -140,6 +142,7 @@ typedef struct {
     char* underline_color;
     int delay;
     int essential;
+    enum BAR_AREA position;
     size_t id;
 } Block;
 
@@ -158,88 +161,39 @@ void block_destroy(Block* block) {
 }
 
 typedef struct {
-    Block** array;
+    int display_all;
+    Block** blocks;
     size_t n_blocks;
     size_t max_blocks;
-} Block_Array;
-
-Block_Array* block_array_make(size_t max) {
-    Block_Array* block_array = malloc(sizeof(Block_Array));
-
-    block_array->array = malloc(sizeof(Block*) * max);
-    block_array->n_blocks = 0;
-    block_array->max_blocks = max;
-
-    return block_array;
-}
-
-void block_array_insert(Block_Array* blocks, Block* block) {
-    if (blocks->n_blocks >= blocks->max_blocks) {
-        blocks->array = realloc(blocks->array, sizeof(Block) * blocks->max_blocks * 2);
-        blocks->max_blocks *= 2;
-    }
-
-    blocks->array[blocks->n_blocks] = block;
-    blocks->n_blocks++;
-}
-
-void block_array_destroy(Block_Array* blocks) {
-    for (size_t i = 0; i < blocks->n_blocks; i++) {
-        block_destroy(blocks->array[i]);
-    }
-    free(blocks->array);
-    free(blocks);
-}
-
-enum BAR_AREA { left, right, center };
-
-typedef struct {
-    int display_all;
-    Block_Array* right;
-    Block_Array* center;
-    Block_Array* left;
     Config* config;
 } Bar_State;
 
 void bar_state_destroy(Bar_State* bs) {
     if (!bs) return;
 
-    block_array_destroy(bs->left);
-    block_array_destroy(bs->right);
-    block_array_destroy(bs->center);
+    for (size_t i = 0; i < bs->n_blocks; i++) {
+        block_destroy(bs->blocks[i]);
+    }
+    free(bs->blocks);
+
     config_destroy(bs->config);
     free(bs);
 }
 
-Block_Array* bar_state_get_block_array(Bar_State* bs, enum BAR_AREA area) {
-    switch (area) {
-        case left:
-            return bs->left;
-        case center:
-            return bs->center;
-        case right:
-            return bs->right;
-        default:
-            return NULL;
+void bar_state_insert(Bar_State* bs, Block* block) {
+    if (bs->n_blocks >= bs->max_blocks) {
+        bs->blocks = realloc(bs->blocks, sizeof(Block) * bs->max_blocks * 2);
+        bs->max_blocks *= 2;
     }
+
+    bs->blocks[bs->n_blocks] = block;
+    bs->n_blocks++;
 }
 
-Block* bar_state_get_block(Bar_State* bs, size_t signal_id) {
-    for (size_t i = 0; i < bs->right->n_blocks; i++) {
-        if (bs->right->array[i]->id == signal_id) {
-            return bs->right->array[i];
-        }
-    }
-
-    for (size_t i = 0; i < bs->center->n_blocks; i++) {
-        if (bs->center->array[i]->id == signal_id) {
-            return bs->center->array[i];
-        }
-    }
-
-    for (size_t i = 0; i < bs->left->n_blocks; i++) {
-        if (bs->left->array[i]->id == signal_id) {
-            return bs->left->array[i];
+Block* bar_state_get_block_by_id(Bar_State* bs, size_t signal_id) {
+    for (size_t i = 0; i < bs->n_blocks; i++) {
+        if (bs->blocks[i]->id == signal_id) {
+            return bs->blocks[i];
         }
     }
 
@@ -253,18 +207,21 @@ int draw_side(
     char marker,
     int left_padding,
     int right_padding) {
+
     int size = sprintf(buffer, "%%{%c}", marker);
 
     for (int i = 0; i < left_padding; i++) {
         size += sprintf(buffer + size, " ");
     }
 
-    Block_Array* blocks = bar_state_get_block_array(bs, position);
-
     int block_printed = 0;
-    for (size_t i = 0; i < blocks->n_blocks; i++) {
+    for (size_t i = 0; i < bs->n_blocks; i++) {
 
-        Block* block = blocks->array[i];
+        Block* block = bs->blocks[i];
+
+        if (block->position != position) {
+            continue;
+        }
 
         pthread_mutex_lock(block->lock);
 
@@ -388,7 +345,7 @@ void block_update(Block* block) {
 Bar_State* g_bar_state;
 
 void update_block_and_draw_bar(int signal_id) {
-    Block* block = bar_state_get_block(g_bar_state, signal_id);
+    Block* block = bar_state_get_block_by_id(g_bar_state, signal_id);
 
     if (!block) return;
 
@@ -398,7 +355,7 @@ void update_block_and_draw_bar(int signal_id) {
 
 void* update_timed_thread(void* signalid) {
     size_t id = (size_t) signalid;
-    Block* block = bar_state_get_block(g_bar_state, id);
+    Block* block = bar_state_get_block_by_id(g_bar_state, id);
     size_t delay = block->delay;
 
     while (1) {
@@ -411,7 +368,7 @@ void* update_timed_thread(void* signalid) {
 
 void* update_continuous_thread(void* signalid) {
     size_t id = (size_t) signalid;
-    Block* block = bar_state_get_block(g_bar_state, id);
+    Block* block = bar_state_get_block_by_id(g_bar_state, id);
 
     FILE* fp = popen(block->command, "r");
 
@@ -468,16 +425,8 @@ void bar_state_run(Bar_State* bs) {
     pthread_attr_init(&at);
     pthread_attr_setstacksize(&at, 128);
 
-    for (size_t i = 0; i < bs->right->n_blocks; i++) {
-        block_run(bs->right->array[i], &at);
-    }
-
-    for (size_t i = 0; i < bs->center->n_blocks; i++) {
-        block_run(bs->center->array[i], &at);
-    }
-
-    for (size_t i = 0; i < bs->left->n_blocks; i++) {
-        block_run(bs->left->array[i], &at);
+    for (size_t i = 0; i < bs->n_blocks; i++) {
+        block_run(bs->blocks[i], &at);
     }
 
     pthread_attr_destroy(&at);
@@ -497,7 +446,7 @@ char* parse_path(const char* dir) {
 
 void bar_state_insert_block(
     Bar_State* bs,
-    enum BAR_AREA bar_mode,
+    enum BAR_AREA bar_area,
     const char* block_name,
     const char* block_command,
     const char* button_command,
@@ -506,7 +455,7 @@ void bar_state_insert_block(
 
     static size_t last_id_right = 34;
     static size_t last_id_other = 64;
-    size_t new_id = (bar_mode == right) ? last_id_right++ : last_id_other--;
+    size_t new_id = (bar_area == right) ? last_id_right++ : last_id_other--;
 
     char* block_command_full_path = parse_path(block_command);
 
@@ -536,12 +485,13 @@ void bar_state_insert_block(
     block->delay = delay;
     block->essential = essential;
     block->id = new_id;
+    block->position = bar_area;
 
     block->lock = malloc(sizeof(pthread_mutex_t));
 
     pthread_mutex_init(block->lock, NULL);
 
-    block_array_insert(bar_state_get_block_array(bs, bar_mode), block);
+    bar_state_insert(bs, block);
 }
 
 Bar_State* bar_state_load(dictionary* ini, Config* config) {
@@ -549,9 +499,10 @@ Bar_State* bar_state_load(dictionary* ini, Config* config) {
     Bar_State* bs = malloc(sizeof(Bar_State));
 
     bs->display_all = 1;
-    bs->left = block_array_make(10);
-    bs->center = block_array_make(10);
-    bs->right = block_array_make(10);
+    bs->max_blocks = 10;
+    bs->blocks = malloc(sizeof(Block*) * bs->max_blocks);
+    bs->n_blocks = 0;
+
     bs->config = config;
 
     for (int i = 0; i < iniparser_getnsec(ini); i++) {
@@ -641,7 +592,7 @@ int button_handler(Bar_State* bs) {
             continue;
         }
 
-        Block* block = bar_state_get_block(bs, block_id);
+        Block* block = bar_state_get_block_by_id(bs, block_id);
         if (!block) {
             ERROR_FMT("invalid block id: %s\n", line);
             continue;
@@ -685,10 +636,7 @@ int fork_lemonbar(Bar_State* bs) {
     *iter++ = bs->config->underline_width;
     *iter++ = "-a";
     char max_clickable[10];
-    sprintf(
-        max_clickable,
-        "%zu",
-        (bs->left->n_blocks + bs->right->n_blocks + bs->center->n_blocks) * 5);
+    sprintf(max_clickable, "%zu", (bs->n_blocks) * 5);
     *iter++ = max_clickable;
 
     if (bs->config->font) {
