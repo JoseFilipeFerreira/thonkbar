@@ -6,15 +6,16 @@ ifndef MANPREFIX
 endif
 
 CC= gcc
-CFLAGS= -lpthread -std=c2x -Wall -Wextra -Wdouble-promotion -Werror=pedantic -Werror=vla -pedantic-errors -Wfatal-errors -flto -march=native -mtune=native -liniparser
+CFLAGS= -std=c2x -Wall -Wextra -Wdouble-promotion -Werror=pedantic -Werror=vla -pedantic-errors -Wfatal-errors -flto -march=native -mtune=native
+CLIBS= -lpthread -liniparser
 
 EXEC= thonkbar
 
 $(EXEC): thonkbar.c
-	$(CC) thonkbar.c -O2 -o $(EXEC) $(CFLAGS)
+	$(CC) thonkbar.c -O2 -o $(EXEC) $(CFLAGS) $(CLIBS)
 
 debug: thonkbar.c
-	$(CC) -g -O0 -DNDEBUG thonkbar.c -o $(EXEC) $(CFLAGS)
+	$(CC) -g -O0 -DNDEBUG thonkbar.c -o $(EXEC) $(CFLAGS) $(CLIBS)
 
 clean:
 	rm $(EXEC)
