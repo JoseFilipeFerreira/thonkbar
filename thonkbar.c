@@ -66,8 +66,8 @@ typedef struct {
     char* background_color;
     char* foreground_color;
     char* text_offset;
-    size_t right_padding;
-    size_t left_padding;
+    unsigned int right_padding;
+    unsigned int left_padding;
     enum BAR_POSITON bar_position;
     enum DOCKING_MODE docking_mode;
 } Config;
@@ -101,30 +101,26 @@ Config* config_load(dictionary* ini) {
 
     const char* bar_position = iniparser_getstring(ini, "config:bar_position", "top");
 
-    if (bar_position) {
-        if (strstr(bar_position, "top") != NULL) {
-            config->bar_position = top;
-        } else if (strstr(bar_position, "bottom") != NULL) {
-            config->bar_position = bottom;
-        } else {
-            ERROR("config: invalid field: config:bar_position\n"
-                  "Can only be top or bottom\n")
-            return NULL;
-        }
+    if (strstr(bar_position, "top") != NULL) {
+        config->bar_position = top;
+    } else if (strstr(bar_position, "bottom") != NULL) {
+        config->bar_position = bottom;
+    } else {
+        ERROR("config: invalid field: config:bar_position\n"
+              "Can only be top or bottom\n")
+        return NULL;
     }
 
     const char* docking_mode = iniparser_getstring(ini, "config:docking_mode", "normal");
 
-    if (docking_mode) {
-        if (strstr(docking_mode, "normal") != NULL) {
-            config->docking_mode = normal;
-        } else if (strstr(docking_mode, "force") != NULL) {
-            config->docking_mode = force;
-        } else {
-            ERROR("config: invalid field: config:docking_mode\n"
-                  "Can only be normal or force\n");
-            return NULL;
-        }
+    if (strstr(docking_mode, "normal") != NULL) {
+        config->docking_mode = normal;
+    } else if (strstr(docking_mode, "force") != NULL) {
+        config->docking_mode = force;
+    } else {
+        ERROR("config: invalid field: config:docking_mode\n"
+              "Can only be normal or force\n");
+        return NULL;
     }
 
     return config;
@@ -141,9 +137,9 @@ typedef struct {
     char* text_color;
     char* underline_color;
     int delay;
-    int essential;
+    unsigned char essential;
     enum BAR_AREA position;
-    size_t id;
+    size_t signal_id;
 } Block;
 
 void block_destroy(Block* block) {
@@ -163,15 +159,15 @@ void block_destroy(Block* block) {
 typedef struct {
     int display_all;
     Block** blocks;
-    size_t n_blocks;
-    size_t max_blocks;
+    unsigned int n_blocks;
+    unsigned int max_blocks;
     Config* config;
 } Bar_State;
 
 void bar_state_destroy(Bar_State* bs) {
     if (!bs) return;
 
-    for (size_t i = 0; i < bs->n_blocks; i++) {
+    for (unsigned int i = 0; i < bs->n_blocks; i++) {
         block_destroy(bs->blocks[i]);
     }
     free(bs->blocks);
@@ -191,8 +187,8 @@ void bar_state_insert(Bar_State* bs, Block* block) {
 }
 
 Block* bar_state_get_block_by_id(Bar_State* bs, size_t signal_id) {
-    for (size_t i = 0; i < bs->n_blocks; i++) {
-        if (bs->blocks[i]->id == signal_id) {
+    for (unsigned int i = 0; i < bs->n_blocks; i++) {
+        if (bs->blocks[i]->signal_id == signal_id) {
             return bs->blocks[i];
         }
     }
@@ -204,18 +200,15 @@ int draw_side(
     char* buffer,
     Bar_State* bs,
     enum BAR_AREA position,
-    char marker,
-    int left_padding,
-    int right_padding) {
+    char position_marker,
+    unsigned int left_padding,
+    unsigned int right_padding) {
 
-    int size = sprintf(buffer, "%%{%c}", marker);
-
-    for (int i = 0; i < left_padding; i++) {
-        size += sprintf(buffer + size, " ");
-    }
+    int size = sprintf(buffer, "%%{%c}", position_marker);
+    size += sprintf(buffer + size, "%*s", left_padding, "");
 
     int block_printed = 0;
-    for (size_t i = 0; i < bs->n_blocks; i++) {
+    for (unsigned int i = 0; i < bs->n_blocks; i++) {
 
         Block* block = bs->blocks[i];
 
@@ -238,10 +231,9 @@ int draw_side(
             }
 
             if (block->button_command) {
-                size += sprintf(buffer + size, " ");
-                for (size_t button_id = 1; button_id < 6; button_id++) {
+                for (unsigned int button_id = 1; button_id < 6; button_id++) {
                     size += sprintf(
-                        buffer + size, "%%{A%zu:%zu %zu:}", button_id, block->id, button_id);
+                        buffer + size, "%%{A%u:%zu %u:}", button_id, block->signal_id, button_id);
                 }
             }
 
@@ -263,7 +255,7 @@ int draw_side(
             }
 
             if (block->button_command) {
-                for (size_t button_id = 1; button_id < 6; button_id++) {
+                for (unsigned int button_id = 1; button_id < 6; button_id++) {
                     size += sprintf(buffer + size, "%%{A}");
                 }
             }
@@ -277,10 +269,7 @@ int draw_side(
         pthread_mutex_unlock(block->lock);
     }
 
-    for (int i = 0; i < right_padding; i++) {
-        size += sprintf(buffer + size, " ");
-    }
-
+    size += sprintf(buffer + size, "%*s", right_padding, "");
     size += sprintf(buffer + size, "%%{F-}");
 
     return size;
@@ -288,12 +277,13 @@ int draw_side(
 
 void draw_bar(Bar_State* bs) {
     char buffer[4096];
-    int offset = 0;
+    unsigned int offset = 0;
     offset += draw_side(buffer + offset, bs, left, 'l', bs->config->left_padding, 0);
     offset += draw_side(buffer + offset, bs, center, 'c', 0, 0);
     offset += draw_side(buffer + offset, bs, right, 'r', 0, bs->config->right_padding);
 
     buffer[offset] = '\n';
+    write(1, buffer, offset + 1);
     write(LEMONBAR_PIPE_STDIN[1], buffer, offset + 1);
 }
 
@@ -311,7 +301,7 @@ void block_update(Block* block) {
     char* text_color = NULL;
     char* text_underline = NULL;
 
-    for (size_t n_lines_read = 0; fgets(line, BUFF_SIZE, fp) != NULL; n_lines_read++) {
+    for (unsigned int n_lines_read = 0; fgets(line, BUFF_SIZE, fp) != NULL; n_lines_read++) {
         line[strlen(line) - 1] = '\0';
         switch (n_lines_read) {
             case 0:
@@ -356,7 +346,7 @@ void update_block_and_draw_bar(int signal_id) {
 void* update_timed_thread(void* signalid) {
     size_t id = (size_t) signalid;
     Block* block = bar_state_get_block_by_id(g_bar_state, id);
-    size_t delay = block->delay;
+    int delay = block->delay;
 
     while (1) {
         update_block_and_draw_bar(id);
@@ -401,14 +391,14 @@ void block_run(Block* block, const pthread_attr_t* attr) {
     switch (block->delay) {
         case ONCE:
             block_update(block);
-            signal(block->id, update_block_and_draw_bar);
+            signal(block->signal_id, update_block_and_draw_bar);
             break;
         case CONTINUOUS:
-            rc = pthread_create(&thread, attr, update_continuous_thread, (void*) block->id);
+            rc = pthread_create(&thread, attr, update_continuous_thread, (void*) block->signal_id);
             break;
         default:
-            rc = pthread_create(&thread, attr, update_timed_thread, (void*) block->id);
-            signal(block->id, update_block_and_draw_bar);
+            rc = pthread_create(&thread, attr, update_timed_thread, (void*) block->signal_id);
+            signal(block->signal_id, update_block_and_draw_bar);
             break;
     }
 
@@ -425,7 +415,7 @@ void bar_state_run(Bar_State* bs) {
     pthread_attr_init(&at);
     pthread_attr_setstacksize(&at, 128);
 
-    for (size_t i = 0; i < bs->n_blocks; i++) {
+    for (unsigned int i = 0; i < bs->n_blocks; i++) {
         block_run(bs->blocks[i], &at);
     }
 
@@ -453,9 +443,9 @@ void bar_state_insert_block(
     int delay,
     int essential) {
 
-    static size_t last_id_right = 34;
-    static size_t last_id_other = 64;
-    size_t new_id = (bar_area == right) ? last_id_right++ : last_id_other--;
+    static unsigned int last_id_right = 34;
+    static unsigned int last_id_other = 64;
+    unsigned int new_id = (bar_area == right) ? last_id_right++ : last_id_other--;
 
     char* block_command_full_path = parse_path(block_command);
 
@@ -471,9 +461,9 @@ void bar_state_insert_block(
     if (delay == CONTINUOUS)
         printf("    CONTINUOUS\n");
     else if (delay == ONCE)
-        printf("    signal: %zu\n", new_id);
+        printf("    signal: %u\n", new_id);
     else
-        printf("    update frequency: %ds\n    signal: %zu\n", delay, new_id);
+        printf("    update frequency: %ds\n    signal: %u\n", delay, new_id);
 
     printf("\n");
 
@@ -484,7 +474,7 @@ void bar_state_insert_block(
     block->button_command = button_command_full_path;
     block->delay = delay;
     block->essential = essential;
-    block->id = new_id;
+    block->signal_id = new_id;
     block->position = bar_area;
 
     block->lock = malloc(sizeof(pthread_mutex_t));
@@ -561,7 +551,7 @@ int button_handler(Bar_State* bs) {
     char* line = calloc(BUFF_SIZE, sizeof(char));
     FILE* lemonbar_output = fdopen(LEMONBAR_PIPE_STDOUT[0], "r");
 
-    for (size_t n_lines = 1; fgets(line, BUFF_SIZE, lemonbar_output); n_lines++) {
+    while (fgets(line, BUFF_SIZE, lemonbar_output)) {
         size_t block_id;
         size_t button_id;
         sscanf(line, "%zu %zu", &block_id, &button_id);
@@ -636,7 +626,7 @@ int fork_lemonbar(Bar_State* bs) {
     *iter++ = bs->config->underline_width;
     *iter++ = "-a";
     char max_clickable[10];
-    sprintf(max_clickable, "%zu", (bs->n_blocks) * 5);
+    sprintf(max_clickable, "%u", (bs->n_blocks) * 5);
     *iter++ = max_clickable;
 
     if (bs->config->font) {
