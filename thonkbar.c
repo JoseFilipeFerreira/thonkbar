@@ -2,9 +2,10 @@
 #    define _GNU_SOURCE 1
 #endif
 
+#include "iniparser/iniparser.h"
+
 #include <ctype.h>
 #include <errno.h>
-#include <iniparser.h>
 #include <pthread.h>
 #include <pwd.h>
 #include <signal.h>
@@ -283,7 +284,6 @@ void draw_bar(Bar_State* bs) {
     offset += draw_side(buffer + offset, bs, right, 'r', 0, bs->config->right_padding);
 
     buffer[offset] = '\n';
-    write(1, buffer, offset + 1);
     write(LEMONBAR_PIPE_STDIN[1], buffer, offset + 1);
 }
 
